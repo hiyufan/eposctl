@@ -67,6 +67,46 @@ enum Cmd {
         #[arg(long)]
         raw: bool,
     },
+    /// List Windows playback and recording devices (* = default)
+    Audio {
+        #[command(subcommand)]
+        cmd: Option<AudioCmd>,
+    },
+}
+
+#[derive(Subcommand)]
+enum AudioCmd {
+    /// Make a device the Windows default (matched by part of its name, or its id)
+    Default {
+        device: String,
+        /// A recording device instead of a playback device
+        #[arg(long)]
+        input: bool,
+    },
+}
+
+fn audio(cmd: Option<AudioCmd>) -> std::io::Result<()> {
+    use eposctl::audio::{self, Flow};
+    let err = |e: windows::core::Error| std::io::Error::other(e.to_string());
+    match cmd {
+        None => {
+            for (flow, title) in [(Flow::Output, "playback"), (Flow::Input, "recording")] {
+                let default = audio::default_id(flow).map_err(err)?;
+                println!("{title}");
+                for ep in audio::endpoints(flow).map_err(err)? {
+                    let mark = if default.as_deref() == Some(ep.id.as_str()) { "*" } else { " " };
+                    println!("  {mark} {}", ep.name);
+                }
+            }
+        }
+        Some(AudioCmd::Default { device, input }) => {
+            let flow = if input { Flow::Input } else { Flow::Output };
+            let ep = audio::find(flow, &device).map_err(std::io::Error::other)?;
+            audio::set_default(&ep.id).map_err(err)?;
+            println!("default {}: {}", if input { "recording" } else { "playback" }, ep.name);
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -192,6 +232,7 @@ fn sidetone(level: Option<u16>) -> std::io::Result<()> {
 fn run(cli: Cli) -> std::io::Result<()> {
     match cli.cmd {
         Cmd::Monitor { raw } => return monitor(raw),
+        Cmd::Audio { cmd } => return audio(cmd),
         Cmd::Info => return info(),
         Cmd::Sidetone { level } => return sidetone(level),
         Cmd::Report { seconds, query } => {
@@ -214,7 +255,9 @@ fn run(cli: Cli) -> std::io::Result<()> {
 
     let ch = ApoChannel::open(cli.device)?;
     let written = match cli.cmd {
-        Cmd::List | Cmd::Monitor { .. } | Cmd::Info | Cmd::Sidetone { .. } | Cmd::Report { .. } => unreachable!(),
+        Cmd::List | Cmd::Monitor { .. } | Cmd::Info | Cmd::Sidetone { .. } | Cmd::Report { .. } | Cmd::Audio { .. } => {
+            unreachable!()
+        }
         Cmd::Status { raw } => {
             print_status(ch.device, &ch.read()?, raw);
             return Ok(());

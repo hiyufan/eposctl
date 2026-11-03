@@ -5,6 +5,7 @@
 compile_error!("eposctl currently supports Windows only");
 
 pub mod apo;
+pub mod audio;
 pub mod capricorn;
 pub mod headset;
 pub mod hid;

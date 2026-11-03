@@ -112,6 +112,16 @@ pub struct AutoPresets {
     pub rules: Vec<AppRule>,
 }
 
+/// Switch the Windows default devices when the headset is turned off and on.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DeviceSwitch {
+    pub enabled: bool,
+    /// Endpoint ids to use while the headset is off; `None` leaves that direction alone.
+    pub output: Option<String>,
+    pub input: Option<String>,
+}
+
 /// Global hotkeys, stored like `Ctrl+Alt+PageDown`; `None` = not set.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -151,9 +161,12 @@ pub struct Config {
     pub close_to_tray: bool,
     pub restore_on_start: bool,
     pub battery_alerts: bool,
+    /// Last measured battery drain in percent per hour, for the runtime estimate.
+    pub battery_rate: Option<f32>,
     pub custom_presets: Vec<CustomPreset>,
     pub auto: AutoPresets,
     pub hotkeys: Hotkeys,
+    pub device_switch: DeviceSwitch,
     pub last: Last,
 }
 
@@ -164,9 +177,11 @@ impl Default for Config {
             close_to_tray: true,
             restore_on_start: true,
             battery_alerts: true,
+            battery_rate: None,
             custom_presets: Vec::new(),
             auto: AutoPresets::default(),
             hotkeys: Hotkeys::default(),
+            device_switch: DeviceSwitch::default(),
             last: Last::default(),
         }
     }

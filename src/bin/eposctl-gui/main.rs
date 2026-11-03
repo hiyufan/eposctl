@@ -2,7 +2,9 @@
 
 #![windows_subsystem = "windows"]
 
+mod battery;
 mod config;
+mod devswitch;
 mod dialog;
 mod eq;
 mod foreground;
@@ -122,6 +124,11 @@ struct App {
     recording: Option<Action>,
     /// Result of the last preset import/export: (message, succeeded).
     io_msg: Option<(String, bool)>,
+
+    /// Headset link state seen last, to act on power on/off.
+    last_linked: Option<bool>,
+    devices: devswitch::Devices,
+    battery: battery::Tracker,
 }
 
 fn factory_label(s: &Strings, name: &str) -> &'static str {
@@ -229,6 +236,9 @@ impl App {
             hotkeys: hotkeys::Hotkeys::spawn(cc.egui_ctx.clone()),
             recording: None,
             io_msg: None,
+            last_linked: None,
+            devices: devswitch::Devices::new(cc.egui_ctx.clone()),
+            battery: battery::Tracker::default(),
             cfg,
         };
         // Debug builds: `EPOSCTL_PAGE=mic|device|settings` opens on that page (for screenshots).
@@ -540,6 +550,98 @@ impl App {
             if self.recording.is_some() {
                 ui.add_space(4.0);
                 widgets::desc(ui, s.hk_record_hint);
+            }
+        });
+    }
+
+    /// "about 6 h left", from the measured drain rate; `None` while charging or unknown.
+    fn battery_left(&self, percent: u8) -> Option<String> {
+        if self.battery.charging() {
+            return None;
+        }
+        let h = battery::hours_left(percent, self.cfg.battery_rate?)?;
+        let s = self.s();
+        let t = if h >= 2.0 {
+            s.hours.replace("{n}", &format!("{}", h.round() as u32))
+        } else if h >= 1.0 {
+            s.hours.replace("{n}", &format!("{:.1}", h))
+        } else {
+            s.minutes.replace("{n}", &format!("{}", ((h * 60.0 / 10.0).round() as u32 * 10).max(10)))
+        };
+        Some(s.battery_left.replace("{t}", &t))
+    }
+
+    // ---- default device follows the headset ----
+
+    fn follow_headset(&mut self, linked: Option<bool>) {
+        let prev = std::mem::replace(&mut self.last_linked, linked);
+        if prev == linked || !self.cfg.device_switch.enabled {
+            return;
+        }
+        // Off: also on the first reading, so a headset that is already off at start
+        // is handled. On: only after we saw it off, so starting eposctl never
+        // overrides a device picked by hand.
+        let event = match (prev, linked) {
+            (_, Some(false)) => devswitch::Event::Off,
+            (Some(false), Some(true)) => devswitch::Event::On,
+            _ => return,
+        };
+        devswitch::apply(event, &self.cfg.device_switch);
+    }
+
+    fn devswitch_panel(&mut self, ui: &mut Ui) {
+        let s = self.s();
+        widgets::panel().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            let mut on = self.cfg.device_switch.enabled;
+            if Self::setting_row(ui, s.devsw_title, s.devsw_desc, &mut on, true) {
+                self.cfg.device_switch.enabled = on;
+                if on {
+                    self.devices.refresh();
+                }
+                self.mark_dirty();
+            }
+            if !self.cfg.device_switch.enabled {
+                return;
+            }
+            self.devices.refresh_if_stale();
+            let Some(list) = self.devices.get() else {
+                ui.add_space(6.0);
+                widgets::spinner(ui);
+                return;
+            };
+            // Pick sensible devices the first time: the first non-EPOS one of each kind.
+            let ds = &mut self.cfg.device_switch;
+            if ds.output.is_none() && ds.input.is_none() {
+                ds.output = list.output.iter().find(|e| !eposctl::audio::is_epos(&e.name)).map(|e| e.id.clone());
+                ds.input = list.input.iter().find(|e| !eposctl::audio::is_epos(&e.name)).map(|e| e.id.clone());
+                self.mark_dirty();
+            }
+            ui.add_space(8.0);
+            widgets::divider(ui);
+            ui.add_space(4.0);
+            let headset: Vec<&str> = list.output.iter().chain(&list.input).filter(|e| eposctl::audio::is_epos(&e.name)).map(|e| e.name.as_str()).collect();
+            if headset.is_empty() {
+                ui.label(RichText::new(s.devsw_no_headset).font(theme::font(12.5)).color(WARN));
+            } else {
+                widgets::desc(ui, &s.devsw_headset.replace("{name}", &headset.join(" · ")));
+            }
+            ui.add_space(4.0);
+            let mut dirty = false;
+            for (title, eps, which) in [(s.devsw_output, &list.output, 0), (s.devsw_input, &list.input, 1)] {
+                let choices: Vec<(String, String)> =
+                    eps.iter().filter(|e| !eposctl::audio::is_epos(&e.name)).map(|e| (e.id.clone(), e.name.clone())).collect();
+                let slot = if which == 0 { &mut self.cfg.device_switch.output } else { &mut self.cfg.device_switch.input };
+                ui.horizontal(|ui| {
+                    ui.set_min_height(36.0);
+                    ui.label(RichText::new(title).color(TEXT));
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        dirty |= preset_combo(ui, ("devsw", which), slot, &choices, Some(s.devsw_none), s.devsw_missing);
+                    });
+                });
+            }
+            if dirty {
+                self.mark_dirty();
             }
         });
     }
@@ -1117,7 +1219,13 @@ impl App {
             widgets::divider(ui);
             widgets::info_row(ui, s.firmware, d.firmware.as_deref().unwrap_or(dash), TEXT);
             widgets::divider(ui);
-            let bat = d.battery.map(|b| format!("{b}%")).unwrap_or_else(|| dash.to_owned());
+            let bat = match d.battery {
+                Some(b) => match self.battery_left(b) {
+                    Some(left) => format!("{left}  ·  {b}%"),
+                    None => format!("{b}%"),
+                },
+                None => dash.to_owned(),
+            };
             let bat_color = match d.battery {
                 Some(0..=10) => DANGER,
                 Some(11..=20) => WARN,
@@ -1218,6 +1326,8 @@ impl App {
         ui.add_space(12.0);
         self.hotkeys_panel(ui);
         ui.add_space(12.0);
+        self.devswitch_panel(ui);
+        ui.add_space(12.0);
         self.presets_io_panel(ui);
         ui.add_space(12.0);
         widgets::panel().show(ui, |ui| {
@@ -1256,10 +1366,18 @@ impl App {
         let linked = d.linked == Some(true);
         let name = d.product.clone().unwrap_or_else(|| s.headset.to_owned());
         let tip = match (linked, d.battery) {
-            (true, Some(b)) => format!("{name}\n{} {b}%", s.tray_battery),
+            (true, Some(b)) => match self.battery_left(b) {
+                Some(left) => format!("{name}\n{} {b}% ({left})", s.tray_battery),
+                None => format!("{name}\n{} {b}%", s.tray_battery),
+            },
             (true, None) => name,
             _ => format!("{name}\n{}", s.tray_no_headset),
         };
+        self.follow_headset(d.linked);
+        if let Some(rate) = self.battery.observe(if linked { d.battery } else { None }, Instant::now()) {
+            self.cfg.battery_rate = Some(rate);
+            self.mark_dirty();
+        }
         if linked && let Some(b) = d.battery {
             let name = d.product.clone().unwrap_or_else(|| s.headset.to_owned());
             self.check_battery(&name, b);
