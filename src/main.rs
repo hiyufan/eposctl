@@ -52,6 +52,15 @@ enum Cmd {
     Info,
     /// Show or set sidetone level
     Sidetone { level: Option<u16> },
+    /// Print a read-only device report to attach to a GitHub issue (no serial number)
+    Report {
+        /// Seconds to listen to headset traffic
+        #[arg(long, default_value_t = 15)]
+        seconds: u64,
+        /// Also send read-only queries (product name, firmware, battery, sidetone)
+        #[arg(long)]
+        query: bool,
+    },
     /// Passively print headset events and responses from the dongle (read-only)
     Monitor {
         /// Also print every raw frame
@@ -185,6 +194,11 @@ fn run(cli: Cli) -> std::io::Result<()> {
         Cmd::Monitor { raw } => return monitor(raw),
         Cmd::Info => return info(),
         Cmd::Sidetone { level } => return sidetone(level),
+        Cmd::Report { seconds, query } => {
+            let opts = eposctl::report::Options { listen: std::time::Duration::from_secs(seconds), query };
+            print!("{}", eposctl::report::build(&opts, |m| eprintln!("{m}")));
+            return Ok(());
+        }
         _ => {}
     }
     if let Cmd::List = cli.cmd {
@@ -200,7 +214,7 @@ fn run(cli: Cli) -> std::io::Result<()> {
 
     let ch = ApoChannel::open(cli.device)?;
     let written = match cli.cmd {
-        Cmd::List | Cmd::Monitor { .. } | Cmd::Info | Cmd::Sidetone { .. } => unreachable!(),
+        Cmd::List | Cmd::Monitor { .. } | Cmd::Info | Cmd::Sidetone { .. } | Cmd::Report { .. } => unreachable!(),
         Cmd::Status { raw } => {
             print_status(ch.device, &ch.read()?, raw);
             return Ok(());

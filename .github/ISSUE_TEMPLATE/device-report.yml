@@ -1,0 +1,47 @@
+name: Device report
+description: Share what eposctl sees on your EPOS headset, so support for more models can be added.
+title: "Device report: <model>"
+labels: ["device report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Run this in a terminal with your headset connected and paste the output below:
+
+        ```
+        eposctl report --query
+        ```
+
+        While it listens (15 s), switch the headset off and on and press its buttons.
+        The report does not include your serial number, but please look it over before posting.
+  - type: input
+    id: model
+    attributes:
+      label: Headset model
+      placeholder: e.g. EPOS GSP 670, H6PRO, H3 Hybrid
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection
+      options:
+        - USB wireless dongle
+        - USB cable
+        - Bluetooth
+        - 3.5 mm with USB sound card
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Output of `eposctl report --query`
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: What works and what doesn't
+      description: Try `eposctl status`, a preset, and the GUI. Anything else you noticed.

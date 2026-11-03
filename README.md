@@ -24,6 +24,11 @@ Early. Tested with the **EPOS H3PRO Hybrid** (USB dongle `1395:0303`).
 | Live events: ANC on/off, sidetone, headset link | works (`monitor`) |
 | Tray app with GUI (`eposctl-gui`) | works |
 
+## Download
+
+Prebuilt binaries are on the [Releases](https://github.com/hiyufan/eposctl/releases)
+page: unzip and run `eposctl-gui.exe`.
+
 ## Requirements
 
 - Windows 10/11
@@ -69,6 +74,7 @@ eposctl --device 1395:0303 status
 eposctl info                     # name, serial, firmware, battery, sidetone (HID)
 eposctl sidetone [0-255]         # show or set sidetone level
 eposctl monitor [--raw]          # print headset events (read-only)
+eposctl report [--query]         # read-only device report for a GitHub issue
 ```
 
 Sidetone note: on the H3PRO used for testing, sidetone was inaudible at every
@@ -77,6 +83,14 @@ reports the value. Reports from other units are welcome.
 
 From Git Bash or other POSIX shells, write the path with forward slashes
 (`D:/path/to/eposctl.exe`); backslashes are treated as escapes.
+
+## Other EPOS models
+
+Only the H3PRO Hybrid has been tested. If you have another EPOS headset, run
+`eposctl report --query` and open a
+[device report](https://github.com/hiyufan/eposctl/issues/new?template=device-report.yml).
+The report is read-only and leaves out the serial number. See [ROADMAP.md](ROADMAP.md)
+for what is planned.
 
 ## Building
 

@@ -11,7 +11,7 @@ use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
 };
 use windows_sys::Win32::Devices::HumanInterfaceDevice::{
     HIDD_ATTRIBUTES, HIDP_CAPS, HidD_FreePreparsedData, HidD_GetAttributes, HidD_GetHidGuid,
-    HidD_GetPreparsedData, HidD_SetNumInputBuffers, HidP_GetCaps,
+    HidD_GetPreparsedData, HidD_GetProductString, HidD_SetNumInputBuffers, HidP_GetCaps,
 };
 use windows_sys::Win32::Foundation::{
     CloseHandle, ERROR_IO_PENDING, GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
@@ -37,6 +37,8 @@ pub struct HidInfo {
     pub usage: u16,
     pub input_len: u16,
     pub output_len: u16,
+    /// USB product string, if the device reports one.
+    pub product: Option<String>,
 }
 
 fn wide(s: &str) -> Vec<u16> {
@@ -55,6 +57,16 @@ unsafe fn open_path(path: &str, access: u32) -> HANDLE {
             ptr::null_mut(),
         )
     }
+}
+
+unsafe fn product_string(h: HANDLE) -> Option<String> {
+    let mut buf = [0u16; 128];
+    if unsafe { HidD_GetProductString(h, buf.as_mut_ptr().cast(), (buf.len() * 2) as u32) } == 0 {
+        return None;
+    }
+    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    let s = String::from_utf16_lossy(&buf[..len]).trim().to_string();
+    (!s.is_empty()).then_some(s)
 }
 
 /// Query attributes and top-level caps of one HID interface (opened with no access rights).
@@ -80,6 +92,7 @@ fn probe(path: &str) -> Option<HidInfo> {
                         usage: caps.Usage,
                         input_len: caps.InputReportByteLength,
                         output_len: caps.OutputReportByteLength,
+                        product: product_string(h),
                     });
                 }
                 HidD_FreePreparsedData(pp);

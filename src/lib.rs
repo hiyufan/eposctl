@@ -10,3 +10,4 @@ pub mod headset;
 pub mod hid;
 pub mod objdir;
 pub mod presets;
+pub mod report;
