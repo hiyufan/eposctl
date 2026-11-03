@@ -125,6 +125,8 @@ struct App {
     recording: Option<Action>,
     /// Result of the last preset import/export: (message, succeeded).
     io_msg: Option<(String, bool)>,
+    /// Result of the last EQ file import: (microphone EQ, message, ok).
+    eq_msg: Option<(bool, String, bool)>,
 
     /// Headset link state seen last, to act on power on/off.
     last_linked: Option<bool>,
@@ -240,6 +242,7 @@ impl App {
             hotkeys: hotkeys::Hotkeys::spawn(cc.egui_ctx.clone()),
             recording: None,
             io_msg: None,
+            eq_msg: None,
             last_linked: None,
             devices: devswitch::Devices::new(cc.egui_ctx.clone()),
             battery: battery::Tracker::default(),
@@ -714,6 +717,38 @@ impl App {
         });
     }
 
+    /// Load an Equalizer APO / AutoEQ file into the speaker or microphone EQ.
+    fn import_eq(&mut self, mic: bool) {
+        let s = self.s();
+        let Some(path) = dialog::eq_file() else { return };
+        let parsed = std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| eposctl::eqfile::parse(&t));
+        let (msg, ok) = match parsed {
+            Ok(imp) => {
+                let g = imp.gains;
+                self.apply(|st| if mic { st.set_mic_eq(&g) } else { st.set_speaker_eq(&g) });
+                let mut m = s.eq_imported.replace("{n}", &imp.used.to_string());
+                if imp.shift != 0.0 {
+                    m += &s.eq_shifted.replace("{db}", &format!("{:+.1}", imp.shift));
+                }
+                if imp.clipped {
+                    m += s.eq_clipped;
+                }
+                (m, true)
+            }
+            Err(e) => (s.io_failed.replace("{err}", &e), false),
+        };
+        self.eq_msg = Some((mic, msg, ok));
+    }
+
+    fn eq_msg_line(&self, ui: &mut Ui, mic: bool) {
+        if let Some((m, msg, ok)) = &self.eq_msg
+            && *m == mic
+        {
+            ui.label(RichText::new(msg).font(theme::font(12.5)).color(if *ok { ACCENT } else { DANGER }));
+            ui.add_space(4.0);
+        }
+    }
+
     // ---- per-program presets ----
 
     /// Presets a rule can point at, as (reference, label). Saved presets are
@@ -1089,6 +1124,9 @@ impl App {
                     if widgets::ghost_toggle(ui, s.reset, !comparing, false).clicked() {
                         self.apply(|st| st.set_speaker_eq(&[0.0; BANDS]));
                     }
+                    if widgets::ghost_toggle(ui, s.import, !comparing, false).on_hover_text(s.eq_import_tip).clicked() {
+                        self.import_eq(false);
+                    }
                     let can_undo = !self.undo.is_empty() && !comparing;
                     if widgets::ghost_toggle(ui, s.undo, can_undo, false).on_hover_text(s.undo_tip).clicked() {
                         self.undo();
@@ -1113,10 +1151,11 @@ impl App {
             let editable = self.comparing.is_none();
             ui.add_enabled_ui(editable, |ui| {
                 let mut g = self.s.as_ref().map(|x| x.speaker_eq()).unwrap_or_default();
-                if eq::editor(ui, "speaker", &mut g, s.low, s.high, 230.0) && editable {
+                if eq::editor(ui, "speaker", &mut g, 230.0) && editable {
                     self.apply(|st| st.set_speaker_eq(&g));
                 }
             });
+            self.eq_msg_line(ui, false);
             widgets::desc(ui, s.eq_hint);
         });
         ui.add_space(12.0);
@@ -1304,13 +1343,17 @@ impl App {
                     if widgets::ghost(ui, s.reset).clicked() {
                         self.apply(|st| st.set_mic_eq(&[0.0; BANDS]));
                     }
+                    if widgets::ghost(ui, s.import).on_hover_text(s.eq_import_tip).clicked() {
+                        self.import_eq(true);
+                    }
                 });
             });
             ui.add_space(6.0);
             let mut g = self.s.as_ref().map(|x| x.mic_eq()).unwrap_or_default();
-            if eq::editor(ui, "mic", &mut g, s.low, s.high, 230.0) {
+            if eq::editor(ui, "mic", &mut g, 230.0) {
                 self.apply(|st| st.set_mic_eq(&g));
             }
+            self.eq_msg_line(ui, true);
             widgets::desc(ui, s.eq_hint);
         });
     }

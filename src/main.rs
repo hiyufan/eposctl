@@ -42,6 +42,17 @@ enum Cmd {
         #[arg(num_args = BANDS, required = true)]
         gains: Vec<f32>,
     },
+    /// Load an Equalizer APO / AutoEQ file (ParametricEQ.txt, GraphicEQ.txt or a CSV)
+    /// into the 9 EQ bands
+    EqImport {
+        file: std::path::PathBuf,
+        /// Load into the microphone EQ instead of the speaker EQ
+        #[arg(long)]
+        mic: bool,
+        /// Only print the bands, do not write them
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Set reverb amount in percent (0-100)
     Reverb { percent: f32 },
     /// Set microphone noise gate amount in percent (0-100)
@@ -261,10 +272,33 @@ fn run(cli: Cli) -> std::io::Result<()> {
         return Ok(());
     }
 
+    let mut imported = None;
+    if let Cmd::EqImport { file, dry_run, .. } = &cli.cmd {
+        let text = std::fs::read_to_string(file)?;
+        let imp = eposctl::eqfile::parse(&text).map_err(std::io::Error::other)?;
+        for (i, g) in imp.gains.iter().enumerate() {
+            println!("{:>8}  {g:+.1} dB", eposctl::eqfile::band_freq(i));
+        }
+        if imp.shift != 0.0 {
+            println!("shifted by {:+.1} dB to fit -6..+6 dB", imp.shift);
+        }
+        if imp.clipped {
+            println!("the curve is taller than 12 dB; the ends were clipped");
+        }
+        if *dry_run {
+            return Ok(());
+        }
+        imported = Some(imp.gains);
+    }
+
     let ch = ApoChannel::open(cli.device)?;
     let written = match cli.cmd {
         Cmd::List | Cmd::Monitor { .. } | Cmd::Info | Cmd::Sidetone { .. } | Cmd::Report { .. } | Cmd::Audio { .. } => {
             unreachable!()
+        }
+        Cmd::EqImport { mic, .. } => {
+            let g = imported.expect("parsed above");
+            ch.modify(|s| if mic { s.set_mic_eq(&g) } else { s.set_speaker_eq(&g) })?
         }
         Cmd::Status { raw } => {
             print_status(ch.device, &ch.read()?, raw);

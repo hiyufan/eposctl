@@ -83,6 +83,13 @@ last, measured from how fast it drains while the headset is on.
 **Preset files**: export saves your custom presets as JSON; import adds the
 presets from such a file and skips ones you already have.
 
+**EQ files**: "Import" next to either EQ loads an Equalizer APO or AutoEQ file
+(`ParametricEQ.txt`, `GraphicEQ.txt` or the CSV), so a headphone correction
+from [AutoEQ](https://github.com/jaakkopasanen/AutoEq) can be used directly.
+The curve is read off at the nine band centres (62.5 Hz to 16 kHz, one octave
+apart) and moved up or down to fit the ±6 dB range; the preamp is ignored.
+The band frequencies come from the EPOS APO's code, not from a measurement.
+
 EQ curve: drag a point, click in a column to move that band there,
 double-click to reset it to 0 dB. You can also click the curve and use the
 arrow keys: ←/→ selects a band, ↑/↓ changes it by 0.5 dB, and Shift+↑/↓ by 1 dB.
@@ -98,6 +105,7 @@ eposctl status [--raw]           # current DSP settings
 eposctl preset music             # flat | music | esport | movie
 eposctl eq 6 4 1 0 -1 0 1 4 6    # 9 speaker bands in dB (-6..6), low to high
 eposctl mic-eq 0 0 0 0 0 0 0 0 0
+eposctl eq-import ParametricEQ.txt [--mic] [--dry-run]   # Equalizer APO / AutoEQ file
 eposctl surround on
 eposctl reverb 30                # percent
 eposctl gate 40                  # percent

@@ -56,6 +56,17 @@ Offsets are from the start of the section. Floats are little-endian IEEE-754.
 | `0xB4` | u32 | `2` in every capture; candidate for `hrtf_preset` or `mic_nr_preset` | unknown |
 | `0x440` | f32[15] | level meters in dB written by the APO; -120 = silence | observed |
 
+### EQ bands
+
+`EAPO.dll` (2023-05-02 build) builds a table of nine floats at start-up,
+`62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000` (constants at RVA
+`0x4E7360` and `0x4D6B00`, static initialiser at RVA `0x258190`), and passes it
+to its EQ together with the sample rate, a sample-rate dependent coefficient
+table (one for 48 kHz, one for other rates) and the constants `1.5` and `0.95`
+(EQ setup at RVA `0x2B11D3`). It is the only 9-entry frequency table in the
+DLL, so these are taken as the band centres of both EQs (inferred). `1.5` is
+probably the bands' Q and `0.95` a level factor; not confirmed.
+
 Setting names found in both binaries (the order in the struct is not known):
 `direct_sound_enabled`, `speaker_eq_enabled`, `speaker_eq_levels`,
 `reverb_enabled`, `reverb_level`, `noise_gate_enabled`, `noise_gate_level`,

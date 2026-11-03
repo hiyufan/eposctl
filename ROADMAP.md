@@ -37,7 +37,10 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
       (`0A/12`, `0A/17`, `01/14`, `06/14`). Setters (`0A/11`, `0A/16`, `06/32`, `01/1F`)
       are tried one at a time with read-back, because they may persist on the headset.
       Likely candidates: auto power-off timer, prompt volume, mute tone, ANC control.
-- [ ] Centre frequencies of the 9 EQ bands; required before AutoEQ / Equalizer APO import
+- [x] Centre frequencies of the 9 EQ bands (62.5 Hz to 16 kHz, octaves; from `EAPO.dll`),
+      and AutoEQ / Equalizer APO import
+- [ ] Filter shape of the bands (`EAPO.dll` passes 1.5 and 0.95 to its EQ; probably Q and
+      a level factor), to fit imported curves exactly instead of sampling them
 - [ ] Remaining APO fields (`hrtf_preset`, `0xB4`, the mic processing flags)
 
 ## Later

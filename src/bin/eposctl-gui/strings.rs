@@ -28,8 +28,12 @@ pub struct Strings {
     pub overwrite: &'static str,
 
     pub equalizer: &'static str,
-    pub low: &'static str,
-    pub high: &'static str,
+    pub eq_import_tip: &'static str,
+    /// `{n}` is replaced.
+    pub eq_imported: &'static str,
+    /// `{db}` is replaced.
+    pub eq_shifted: &'static str,
+    pub eq_clipped: &'static str,
     pub reset: &'static str,
     pub undo: &'static str,
     pub undo_tip: &'static str,
@@ -166,8 +170,10 @@ static ZH: Strings = Strings {
     overwrite: "用当前设置覆盖",
 
     equalizer: "均衡器",
-    low: "低频",
-    high: "高频",
+    eq_import_tip: "从 Equalizer APO / AutoEQ 文件导入：ParametricEQ.txt、GraphicEQ.txt 或 CSV。可以撤销。",
+    eq_imported: "已导入（{n} 个滤波器或曲线点）",
+    eq_shifted: "，整体移动了 {db} dB 以放进 ±6 dB",
+    eq_clipped: "，曲线高低差超过 12 dB，两端被截断",
     reset: "重置",
     undo: "撤销",
     undo_tip: "撤销上一步（Ctrl+Z），重做用 Ctrl+Y",
@@ -295,8 +301,10 @@ static EN: Strings = Strings {
     overwrite: "Overwrite with current",
 
     equalizer: "Equalizer",
-    low: "Low",
-    high: "High",
+    eq_import_tip: "Load an Equalizer APO / AutoEQ file: ParametricEQ.txt, GraphicEQ.txt or a CSV. Can be undone.",
+    eq_imported: "Imported ({n} filters or curve points)",
+    eq_shifted: ", moved by {db} dB to fit ±6 dB",
+    eq_clipped: ", the curve spans more than 12 dB so its ends were clipped",
     reset: "Reset",
     undo: "Undo",
     undo_tip: "Undo the last change (Ctrl+Z); redo with Ctrl+Y",

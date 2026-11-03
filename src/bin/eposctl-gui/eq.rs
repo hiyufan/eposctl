@@ -4,6 +4,8 @@ use eframe::egui::{
     self, Align2, Color32, CornerRadius, Key, Mesh, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2,
 };
 
+use eposctl::eqfile::{CENTRES_HZ, band_freq, band_label};
+
 use crate::theme::{self, ACCENT, BG, FAINT, HAIRLINE, SECONDARY, TEXT};
 
 pub const MIN_DB: f32 = -6.0;
@@ -19,7 +21,7 @@ fn catmull_rom(p0: Pos2, p1: Pos2, p2: Pos2, p3: Pos2, t: f32) -> Pos2 {
 }
 
 /// Draws the editor and returns true if `gains` changed this frame.
-pub fn editor(ui: &mut Ui, id_salt: &str, gains: &mut [f32], low: &str, high: &str, height: f32) -> bool {
+pub fn editor(ui: &mut Ui, id_salt: &str, gains: &mut [f32; CENTRES_HZ.len()], height: f32) -> bool {
     let n = gains.len();
     let id = ui.scope_id().with(id_salt);
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click_and_drag());
@@ -48,8 +50,10 @@ pub fn editor(ui: &mut Ui, id_salt: &str, gains: &mut [f32], low: &str, high: &s
             Stroke::new(1.0, Color32::from_rgb(0x22, 0x24, 0x2A)),
         );
     }
-    painter.text(pos2(plot.left() - 4.0, rect.bottom() - 2.0), Align2::LEFT_BOTTOM, low, theme::font(12.0), SECONDARY);
-    painter.text(pos2(plot.right() + 4.0, rect.bottom() - 2.0), Align2::RIGHT_BOTTOM, high, theme::font(12.0), SECONDARY);
+    for i in 0..n {
+        painter.text(pos2(x_of(i), rect.bottom() - 4.0), Align2::CENTER_BOTTOM, band_label(i), label_font.clone(), SECONDARY);
+    }
+    painter.text(pos2(plot.left() - 10.0, rect.bottom() - 4.0), Align2::RIGHT_BOTTOM, "Hz", label_font.clone(), FAINT);
 
     // Interaction state kept across frames.
     let sel_id = id.with("sel");
@@ -191,7 +195,7 @@ pub fn editor(ui: &mut Ui, id_salt: &str, gains: &mut [f32], low: &str, high: &s
     let show = dragging.or(hovered).or(if focused { selected } else { None });
     if let Some(i) = show {
         let p = pts[i];
-        let txt = format!("{:+.1} dB", gains[i]);
+        let txt = format!("{}  {:+.1} dB", band_freq(i), gains[i]);
         let galley = painter.layout_no_wrap(txt, theme::font_strong(12.0), TEXT);
         let size = galley.size() + vec2(14.0, 6.0);
         let above = p.y - 14.0 - size.y > plot.top() - 10.0;

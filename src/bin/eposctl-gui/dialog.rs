@@ -1,4 +1,4 @@
-//! Native open/save dialogs for JSON files.
+//! Native open/save file dialogs.
 
 use std::path::PathBuf;
 
@@ -10,9 +10,18 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow;
 
 /// Ask for a `.json` file to save to (`save`) or open. Blocks until the dialog closes.
 pub fn json_file(save: bool, default_name: &str) -> Option<PathBuf> {
-    // Pairs of (description, pattern), each NUL-terminated, then a final NUL.
-    let filter: Vec<u16> = "JSON (*.json)\0*.json\0\0".encode_utf16().collect();
-    let ext: Vec<u16> = "json\0".encode_utf16().collect();
+    file(save, default_name, "JSON (*.json)\0*.json\0", "json")
+}
+
+/// Ask for an Equalizer APO / AutoEQ file to open.
+pub fn eq_file() -> Option<PathBuf> {
+    file(false, "", "Equalizer APO / AutoEQ (*.txt;*.csv)\0*.txt;*.csv\0All files (*.*)\0*.*\0", "txt")
+}
+
+/// `filter` is pairs of (description, pattern), each NUL-terminated.
+fn file(save: bool, default_name: &str, filter: &str, ext: &str) -> Option<PathBuf> {
+    let filter: Vec<u16> = format!("{filter}\0").encode_utf16().collect();
+    let ext: Vec<u16> = format!("{ext}\0").encode_utf16().collect();
     let mut buf = vec![0u16; 1024];
     if save {
         for (d, c) in buf.iter_mut().zip(default_name.encode_utf16().take(1000)) {
