@@ -52,6 +52,8 @@ pub struct Strings {
     pub reverb_off_hint: &'static str,
 
     pub mic_eq: &'static str,
+    pub mic_eq_hint: &'static str,
+    pub input_level: &'static str,
     pub noise_gate: &'static str,
     pub noise_gate_desc: &'static str,
     pub sidetone: &'static str,
@@ -197,6 +199,8 @@ static ZH: Strings = Strings {
     reverb_off_hint: "开启环绕声后可调",
 
     mic_eq: "麦克风均衡器",
+    mic_eq_hint: "灰色柱是麦克风的实时频谱。拖动节点调节，双击归零，方向键微调",
+    input_level: "输入电平",
     noise_gate: "噪声门",
     noise_gate_desc: "数值越高，越能滤掉背景中的轻微声音",
     sidetone: "侧音",
@@ -333,6 +337,8 @@ static EN: Strings = Strings {
     reverb_off_hint: "Turn on surround to adjust",
 
     mic_eq: "Microphone equalizer",
+    mic_eq_hint: "Grey bars show the live microphone spectrum. Drag a point to adjust, double-click to zero, arrow keys to fine-tune",
+    input_level: "Input level",
     noise_gate: "Noise gate",
     noise_gate_desc: "Higher values cut more quiet background sound",
     sidetone: "Sidetone",

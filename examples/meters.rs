@@ -2,7 +2,9 @@
 //!
 //! Samples the 15 meters at 20 Hz through three phases (silence, speaking,
 //! playback) and prints per-phase average and peak for each channel.
-//! Read-only.
+//! The APO only updates the meters while the mic monitor flags are set, so
+//! they are switched on for the capture and restored afterwards
+//! (`--reset` clears them if an interrupted run left them on).
 
 use std::time::{Duration, Instant};
 
@@ -16,9 +18,22 @@ const PHASES: [(&str, u64); 3] = [
 
 fn main() -> std::io::Result<()> {
     let ch = ApoChannel::open(None)?;
-    let s = ch.read()?;
-    println!("device {}  mic monitor flags {:?}", ch.device, s.mic_monitors());
+    if std::env::args().any(|a| a == "--reset") {
+        // Clear the flags, e.g. after an interrupted capture left them on.
+        ch.modify(|s| s.set_mic_monitors([false; 3]))?;
+        println!("mic monitor flags cleared");
+        return Ok(());
+    }
+    let original = ch.read()?.mic_monitors();
+    println!("device {}  mic monitor flags before: {original:?}", ch.device);
+    ch.modify(|s| s.set_mic_monitors([true; 3]))?;
+    let result = capture(&ch);
+    ch.modify(|s| s.set_mic_monitors(original))?;
+    println!("mic monitor flags restored to {original:?}");
+    result
+}
 
+fn capture(ch: &ApoChannel) -> std::io::Result<()> {
     let mut results = Vec::new();
     for (i, (what, secs)) in PHASES.iter().enumerate() {
         eprintln!("\n[{}/3] {what}  ({secs} s) — 3 秒后开始 / starting in 3 s", i + 1);

@@ -47,14 +47,28 @@ Offsets are from the start of the section. Floats are little-endian IEEE-754.
 | `0x04` | u32 | `4` in every capture | unknown |
 | `0x40` | u8 | virtual 3D surround enabled | observed |
 | `0x41` | u8 | `1` in every capture; probably speaker EQ enabled | inferred |
-| `0x42`, `0x44`, `0x46` | u8 | set while the official UI shows the microphone page; probably mic meters / voice activity / voice peak monitors | inferred |
+| `0x42`, `0x44`, `0x46` | u8 | mic monitor enables: set while the official UI shows the microphone page. The APO only updates the meters at `0x440` while they are set | observed |
 | `0x45` | u8 | always flipped together with `0x40` by the official UI; probably reverb enabled | inferred |
 | `0x4C` | f32[9] | speaker EQ gains in dB, -6..+6, lowest band first | observed |
 | `0x70` | f32[9] | microphone EQ gains in dB | observed (bands 1-8) |
 | `0x94` | f32 | reverb amount, 0..1 (official UI writes slider/255) | observed |
 | `0x98` | f32 | noise gate amount, 0..1 (official UI writes slider/255) | observed |
 | `0xB4` | u32 | `2` in every capture; candidate for `hrtf_preset` or `mic_nr_preset` | unknown |
-| `0x440` | f32[15] | level meters in dB written by the APO; -120 = silence | observed |
+| `0x440` | f32[15] | level meters in dB written by the APO; see below | observed |
+
+### Level meters (`0x440`)
+
+With the monitor flags at `0x42/0x44/0x46` cleared, all 15 values stay frozen at
+their last value (observed). With them set:
+
+- meters 0-8 update continuously between -60 and 0 dB (floor -60). Talking into
+  the microphone raised meters 1-5 by 6-16 dB on average over silence (observed,
+  one guided capture). They look like a per-band spectrum, lowest band first,
+  probably matching the 9 microphone EQ bands (inferred). Meter 8 stayed at -60.
+  Whether playback also feeds them has **not** been checked yet.
+- meters 9-14 stayed at -120 in every capture (unknown).
+
+`examples/meters.rs` runs the guided capture (silence, speech, playback).
 
 ### EQ bands
 

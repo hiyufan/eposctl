@@ -20,8 +20,19 @@ fn catmull_rom(p0: Pos2, p1: Pos2, p2: Pos2, p3: Pos2, t: f32) -> Pos2 {
     pos2(f(p0.x, p1.x, p2.x, p3.x), f(p0.y, p1.y, p2.y, p3.y))
 }
 
+/// Range of the optional live level bars drawn behind the curve.
+pub const METER_FLOOR_DB: f32 = -60.0;
+
 /// Draws the editor and returns true if `gains` changed this frame.
-pub fn editor(ui: &mut Ui, id_salt: &str, gains: &mut [f32; CENTRES_HZ.len()], height: f32) -> bool {
+/// `levels` (dB, `METER_FLOOR_DB..=0`, one per band) are drawn as bars behind the
+/// curve on their own scale: the full plot height spans the meter range.
+pub fn editor(
+    ui: &mut Ui,
+    id_salt: &str,
+    gains: &mut [f32; CENTRES_HZ.len()],
+    height: f32,
+    levels: Option<&[f32]>,
+) -> bool {
     let n = gains.len();
     let id = ui.scope_id().with(id_salt);
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click_and_drag());
@@ -138,6 +149,21 @@ pub fn editor(ui: &mut Ui, id_salt: &str, gains: &mut [f32; CENTRES_HZ.len()], h
         d.insert_temp(sel_id, selected);
         d.insert_temp(drag_id, dragging);
     });
+
+    // Live level bars, under everything else that moves.
+    if let Some(levels) = levels {
+        let w = (plot.width() / (n - 1) as f32 * 0.42).min(30.0);
+        for (i, &db) in levels.iter().enumerate().take(n) {
+            let t = ((db - METER_FLOOR_DB) / -METER_FLOOR_DB).clamp(0.0, 1.0);
+            if t <= 0.0 {
+                continue;
+            }
+            let x = x_of(i);
+            let top = plot.bottom() - plot.height() * t;
+            let bar = Rect::from_min_max(pos2(x - w / 2.0, top), pos2(x + w / 2.0, plot.bottom()));
+            painter.rect_filled(bar, CornerRadius::same(3), SECONDARY.gamma_multiply(0.16));
+        }
+    }
 
     // Curve and fill.
     let pts: Vec<Pos2> = (0..n).map(|i| pos2(x_of(i), y_of(gains[i]))).collect();

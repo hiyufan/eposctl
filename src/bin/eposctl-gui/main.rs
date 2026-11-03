@@ -135,6 +135,49 @@ struct App {
     mixer: chatmix::Mixer,
     /// Program name typed into the voice-apps field.
     mix_input: String,
+
+    /// Original mic monitor flags while we have switched them on for the meters.
+    monitors: Option<[bool; 3]>,
+    meters: Meters,
+    /// We hid the window (tray). Tracked here because the viewport's own
+    /// visibility info does not reliably update after `Visible(false)`.
+    hidden: bool,
+}
+
+/// Smoothed microphone meters for display: fast attack, steady fall, peak hold.
+struct Meters {
+    bands: [f32; BANDS],
+    level: f32,
+    peak: f32,
+    peak_at: Instant,
+}
+
+impl Meters {
+    const FALL_DB_PER_S: f32 = 30.0;
+    const PEAK_HOLD: Duration = Duration::from_millis(1500);
+
+    fn new() -> Self {
+        let f = eq::METER_FLOOR_DB;
+        Self { bands: [f; BANDS], level: f, peak: f, peak_at: Instant::now() }
+    }
+
+    fn update(&mut self, raw: &[f32], dt: f32) {
+        let f = eq::METER_FLOOR_DB;
+        let follow = |d: &mut f32, t: f32| {
+            *d = if t >= *d { t } else { (*d - Self::FALL_DB_PER_S * dt).max(t) };
+        };
+        for (d, &r) in self.bands.iter_mut().zip(raw) {
+            follow(d, r.clamp(f, 0.0));
+        }
+        // Overall level: power sum of the bands.
+        let p: f32 = raw.iter().take(BANDS).map(|&r| 10f32.powf(r.clamp(f, 0.0) / 10.0)).sum();
+        let total = (10.0 * p.log10()).clamp(f, 0.0);
+        follow(&mut self.level, total);
+        if total >= self.peak || self.peak_at.elapsed() > Self::PEAK_HOLD {
+            self.peak = total;
+            self.peak_at = Instant::now();
+        }
+    }
 }
 
 fn factory_label(s: &Strings, name: &str) -> &'static str {
@@ -256,6 +299,9 @@ impl App {
             battery: battery::Tracker::default(),
             mixer: chatmix::Mixer::spawn(),
             mix_input: String::new(),
+            monitors: None,
+            meters: Meters::new(),
+            hidden: false,
             cfg,
         };
         // Debug builds: `EPOSCTL_PAGE=mic|device|settings` opens on that page (for screenshots).
@@ -347,6 +393,29 @@ impl App {
     fn drop_apo(&mut self) {
         self.apo = None;
         self.s = None;
+        self.monitors = None;
+    }
+
+    /// The APO only updates its level meters while the mic monitor flags are
+    /// set. Switch them on while the Mic page is on screen, as the official app
+    /// does, and put back whatever was there before.
+    fn set_monitoring(&mut self, on: bool) {
+        let Some(ch) = &self.apo else { return };
+        match (on, self.monitors) {
+            (true, None) => {
+                if let Ok(cur) = ch.read() {
+                    let original = cur.mic_monitors();
+                    if ch.modify(|s| s.set_mic_monitors([true; 3])).is_ok() {
+                        self.monitors = Some(original);
+                    }
+                }
+            }
+            (false, Some(original)) => {
+                let _ = ch.modify(|s| s.set_mic_monitors(original));
+                self.monitors = None;
+            }
+            _ => {}
+        }
     }
 
     /// A user edit: ends any A/B comparison, records an undo step, remembers the result.
@@ -1168,7 +1237,7 @@ impl App {
             let editable = self.comparing.is_none();
             ui.add_enabled_ui(editable, |ui| {
                 let mut g = self.s.as_ref().map(|x| x.speaker_eq()).unwrap_or_default();
-                if eq::editor(ui, "speaker", &mut g, 230.0) && editable {
+                if eq::editor(ui, "speaker", &mut g, 230.0, None) && editable {
                     self.apply(|st| st.set_speaker_eq(&g));
                 }
             });
@@ -1325,6 +1394,10 @@ impl App {
                 if widgets::slider(ui, &mut v, true).changed() {
                     self.apply(|st| st.set_noise_gate(v));
                 }
+                if self.monitors.is_some() {
+                    ui.add_space(2.0);
+                    widgets::level_meter(ui, s.input_level, self.meters.level, self.meters.peak, eq::METER_FLOOR_DB);
+                }
             });
             widgets::panel().show(&mut b[0], |ui| {
                 let linked = d.linked == Some(true) && d.sidetone.is_some();
@@ -1346,9 +1419,16 @@ impl App {
                     let _ = self.tx.send(Cmd::SetSidetone(raw));
                 }
                 if r.dragged()
-                    && let Some((_, t)) = &mut self.sidetone_drag {
-                        *t = Instant::now();
-                    }
+                    && let Some((_, t)) = &mut self.sidetone_drag
+                {
+                    *t = Instant::now();
+                }
+                if self.monitors.is_some() {
+                    // Same footprint as the level meter in the noise-gate panel,
+                    // so both panels have the same height.
+                    ui.add_space(2.0);
+                    ui.allocate_exact_size(vec2(ui.available_width(), widgets::LEVEL_ROW_H), Sense::hover());
+                }
             });
         });
         ui.add_space(12.0);
@@ -1367,11 +1447,13 @@ impl App {
             });
             ui.add_space(6.0);
             let mut g = self.s.as_ref().map(|x| x.mic_eq()).unwrap_or_default();
-            if eq::editor(ui, "mic", &mut g, 230.0) {
+            let bands = self.meters.bands;
+            let levels = self.monitors.is_some().then_some(&bands[..]);
+            if eq::editor(ui, "mic", &mut g, 230.0, levels) {
                 self.apply(|st| st.set_mic_eq(&g));
             }
             self.eq_msg_line(ui, true);
-            widgets::desc(ui, s.eq_hint);
+            widgets::desc(ui, if levels.is_some() { s.mic_eq_hint } else { s.eq_hint });
         });
     }
 
@@ -1571,6 +1653,7 @@ impl eframe::App for App {
             self.quitting = true;
             self.stop_compare();
             self.mixer.shutdown();
+            self.set_monitoring(false);
             self.cfg.save();
             self.tray = None; // remove the icon now rather than leaving a ghost
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -1578,11 +1661,13 @@ impl eframe::App for App {
         }
         if self.hide_frames > 0 && self.tray.is_some() {
             self.hide_frames -= 1;
+            self.hidden = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             ctx.request_repaint();
         }
         if self.flags.take_show() {
             self.hide_frames = 0;
+            self.hidden = false;
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
@@ -1614,6 +1699,17 @@ impl eframe::App for App {
         self.auto_switch(ctx);
         self.update_tray();
 
+        let shown = !self.hidden && !ctx.input(|i| i.viewport().minimized.unwrap_or(false));
+        let metering = self.page == Page::Mic && shown && !self.quitting;
+        self.set_monitoring(metering);
+        if metering && self.monitors.is_some() {
+            if let Some(m) = self.apo.as_ref().and_then(|c| c.read().ok()).map(|s| s.meters()) {
+                let dt = ctx.input(|i| i.stable_dt).min(0.1);
+                self.meters.update(&m[..BANDS], dt);
+            }
+            ctx.request_repaint_after(Duration::from_millis(33));
+        }
+
         if self.cfg_dirty_at.is_some_and(|t| t.elapsed() > Duration::from_millis(800)) {
             self.cfg_dirty_at = None;
             self.cfg.save();
@@ -1624,6 +1720,8 @@ impl eframe::App for App {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                 self.stop_compare();
+                self.hidden = true;
+                self.set_monitoring(false);
             } else {
                 self.cfg.save();
             }
@@ -1685,6 +1783,7 @@ impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.stop_compare();
         self.mixer.shutdown();
+        self.set_monitoring(false);
         self.cfg.save();
     }
 

@@ -243,3 +243,36 @@ pub fn heading(ui: &mut Ui, text: &str) {
     ui.label(egui::RichText::new(text).font(theme::font_strong(15.0)).color(TEXT));
 }
 
+
+/// Height of `level_meter`, so a neighbouring panel can reserve the same space.
+pub const LEVEL_ROW_H: f32 = 20.0;
+
+/// Live input level under a slider, on one row: a bar aligned with the slider
+/// rail, a peak tick, and the value in dB. `floor..=0` dB spans the bar.
+pub fn level_meter(ui: &mut Ui, label: &str, level: f32, peak: f32, floor: f32) {
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), LEVEL_ROW_H), Sense::hover());
+    let value = if level > floor { format!("{level:.0} dB") } else { format!("< {floor:.0} dB") };
+    let galley = ui.painter().layout_no_wrap(value, theme::font(12.0), FAINT);
+    let text_w = 56.0;
+    // Same left inset as the slider rail so the two line up.
+    let bar = Rect::from_min_max(
+        pos2(rect.left() + 8.0, rect.center().y - 3.0),
+        pos2(rect.right() - 8.0 - text_w, rect.center().y + 3.0),
+    );
+    let x = |db: f32| egui::lerp(bar.left()..=bar.right(), ((db - floor) / -floor).clamp(0.0, 1.0));
+    let p = ui.painter();
+    p.rect_filled(bar, CornerRadius::same(3), RAISED);
+    if level > floor {
+        p.rect_filled(
+            Rect::from_min_max(bar.min, pos2(x(level), bar.max.y)),
+            CornerRadius::same(3),
+            TEXT.gamma_multiply(0.55),
+        );
+    }
+    if peak > floor {
+        let px = x(peak);
+        p.line_segment([pos2(px, bar.top() - 2.0), pos2(px, bar.bottom() + 2.0)], Stroke::new(2.0, TEXT));
+    }
+    p.galley(pos2(rect.right() - 8.0 - galley.size().x, rect.center().y - galley.size().y / 2.0), galley, FAINT);
+    resp.on_hover_text(label);
+}

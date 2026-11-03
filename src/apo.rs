@@ -169,6 +169,14 @@ impl Settings {
         layout::MIC_MONITOR_FLAGS.map(|o| self.u8_at(o) != 0)
     }
 
+    /// The APO only updates the level meters while these flags are set
+    /// (observed: meters froze when the official app cleared them on exit).
+    pub fn set_mic_monitors(&mut self, on: [bool; 3]) {
+        for (o, v) in layout::MIC_MONITOR_FLAGS.into_iter().zip(on) {
+            self.bytes[o] = v as u8;
+        }
+    }
+
     pub fn meters(&self) -> [f32; layout::METER_COUNT] {
         std::array::from_fn(|i| self.f32_at(layout::METERS + i * 4))
     }
