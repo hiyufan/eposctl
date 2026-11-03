@@ -21,6 +21,69 @@ pub struct CustomPreset {
     pub sound: Sound,
 }
 
+// ---- preset files ----
+
+/// What `export_presets` writes. Import also accepts a bare list or a single preset.
+#[derive(Serialize)]
+struct PresetFile<'a> {
+    eposctl_presets: u32,
+    presets: &'a [CustomPreset],
+}
+
+pub fn export_presets(presets: &[CustomPreset]) -> String {
+    serde_json::to_string_pretty(&PresetFile { eposctl_presets: 1, presets }).unwrap_or_default()
+}
+
+/// Parse a preset file, clamping values into the ranges the driver accepts.
+pub fn parse_presets(json: &str) -> Result<Vec<CustomPreset>, String> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Any {
+        File { presets: Vec<CustomPreset> },
+        List(Vec<CustomPreset>),
+        One(CustomPreset),
+    }
+    let any: Any = serde_json::from_str(json.trim_start_matches('\u{feff}')).map_err(|e| e.to_string())?;
+    let list = match any {
+        Any::File { presets } | Any::List(presets) => presets,
+        Any::One(p) => vec![p],
+    };
+    let clean = |x: f32, lo: f32, hi: f32| if x.is_finite() { x.clamp(lo, hi) } else { 0.0 };
+    Ok(list
+        .into_iter()
+        .filter_map(|mut p| {
+            p.name = p.name.trim().chars().take(40).collect();
+            for g in &mut p.sound.speaker_eq {
+                *g = clean(*g, crate::eq::MIN_DB, crate::eq::MAX_DB);
+            }
+            p.sound.reverb = clean(p.sound.reverb, 0.0, 1.0);
+            (!p.name.is_empty()).then_some(p)
+        })
+        .collect())
+}
+
+/// Append imported presets and return how many were added. Exact duplicates
+/// are skipped; a name already used for a different sound gets a number.
+pub fn merge_presets(into: &mut Vec<CustomPreset>, new: Vec<CustomPreset>) -> usize {
+    let mut added = 0;
+    for mut p in new {
+        if into.iter().any(|q| q.name == p.name && q.sound == p.sound) {
+            continue;
+        }
+        if into.iter().any(|q| q.name == p.name) {
+            let base = p.name.clone();
+            let mut n = 2;
+            while into.iter().any(|q| q.name == format!("{base} ({n})")) {
+                n += 1;
+            }
+            p.name = format!("{base} ({n})");
+        }
+        into.push(p);
+        added += 1;
+    }
+    added
+}
+
 /// Last applied values, restored on start if enabled.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Last {
@@ -49,6 +112,38 @@ pub struct AutoPresets {
     pub rules: Vec<AppRule>,
 }
 
+/// Global hotkeys, stored like `Ctrl+Alt+PageDown`; `None` = not set.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Hotkeys {
+    pub enabled: bool,
+    pub next_preset: Option<String>,
+    pub prev_preset: Option<String>,
+    pub toggle_surround: Option<String>,
+}
+
+impl Default for Hotkeys {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            next_preset: Some("Ctrl+Alt+PageDown".into()),
+            prev_preset: Some("Ctrl+Alt+PageUp".into()),
+            toggle_surround: Some("Ctrl+Alt+Home".into()),
+        }
+    }
+}
+
+impl Hotkeys {
+    /// Slot `i`, in the order of `hotkeys::Action::ALL`.
+    pub fn slot(&mut self, i: usize) -> &mut Option<String> {
+        match i {
+            0 => &mut self.next_preset,
+            1 => &mut self.prev_preset,
+            _ => &mut self.toggle_surround,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -58,6 +153,7 @@ pub struct Config {
     pub battery_alerts: bool,
     pub custom_presets: Vec<CustomPreset>,
     pub auto: AutoPresets,
+    pub hotkeys: Hotkeys,
     pub last: Last,
 }
 
@@ -70,6 +166,7 @@ impl Default for Config {
             battery_alerts: true,
             custom_presets: Vec::new(),
             auto: AutoPresets::default(),
+            hotkeys: Hotkeys::default(),
             last: Last::default(),
         }
     }
@@ -162,5 +259,45 @@ pub mod autostart {
             if rc == 2 { 0 } else { rc } // ERROR_FILE_NOT_FOUND: already off
         };
         if rc == 0 { Ok(()) } else { Err(std::io::Error::from_raw_os_error(rc as i32)) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn preset(name: &str, g: f32) -> CustomPreset {
+        CustomPreset { name: name.into(), sound: Sound { speaker_eq: [g; BANDS], reverb: 0.5, surround: true } }
+    }
+
+    #[test]
+    fn presets_round_trip_and_merge() {
+        let mine = vec![preset("Game", 1.0), preset("Voice", -2.0)];
+        let json = export_presets(&mine);
+        let back = parse_presets(&json).unwrap();
+        assert_eq!(back.len(), 2);
+        assert_eq!(back[0].sound, mine[0].sound);
+
+        let mut have = mine.clone();
+        // Same name and sound: skipped. Same name, other sound: numbered.
+        let added = merge_presets(&mut have, vec![preset("Game", 1.0), preset("Voice", 3.0), preset("New", 0.0)]);
+        assert_eq!(added, 2);
+        let names: Vec<_> = have.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["Game", "Voice", "Voice (2)", "New"]);
+    }
+
+    #[test]
+    fn import_accepts_list_and_single_and_clamps() {
+        let one = r#"{"name":"  Loud ","sound":{"speaker_eq":[99,0,0,0,0,0,0,0,-99],"reverb":7,"surround":false}}"#;
+        let p = parse_presets(one).unwrap();
+        assert_eq!(p[0].name, "Loud");
+        assert_eq!(p[0].sound.speaker_eq[0], crate::eq::MAX_DB);
+        assert_eq!(p[0].sound.speaker_eq[8], crate::eq::MIN_DB);
+        assert_eq!(p[0].sound.reverb, 1.0);
+        assert_eq!(parse_presets(&format!("[{one},{one}]")).unwrap().len(), 2);
+        assert!(parse_presets("{\"presets\": 3}").is_err());
+        assert!(parse_presets(r#"[{"name":"","sound":{"speaker_eq":[0,0,0,0,0,0,0,0,0],"reverb":0,"surround":false}}]"#)
+            .unwrap()
+            .is_empty());
     }
 }

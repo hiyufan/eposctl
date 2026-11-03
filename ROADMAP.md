@@ -20,8 +20,8 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
 
 - [x] Per-application presets: switch preset when a given program comes to the foreground,
       with a default preset. Manual changes are kept until the foreground program changes.
-- [ ] Global hotkeys (next/previous preset, surround on/off)
-- [ ] Export and import presets as JSON
+- [x] Global hotkeys (next/previous preset, surround on/off)
+- [x] Export and import presets as JSON
 
 ## Research track (runs alongside the above)
 

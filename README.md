@@ -44,12 +44,30 @@ No administrator rights are required.
 - **音效 / Sound**: presets, a draggable 9-band EQ curve, virtual 7.1 surround and reverb
 - **麦克风 / Mic**: noise gate, sidetone, microphone EQ
 - **设备 / Device**: model, serial, firmware, battery, ANC state
-- **设置 / Settings**: language (中文 / English), minimize to tray on close, start with Windows, restore the last sound settings on start
+- **设置 / Settings**: language (中文 / English), minimize to tray on close, start with Windows,
+  restore the last sound settings on start, low-battery alerts, presets per program,
+  global hotkeys, preset import/export
 
 You can save your own presets. Right-click one to overwrite or delete it. The
-tray icon's ring shows the battery level, its menu switches presets, and
-left-clicking it opens the window. Launching the exe again also brings the
-running instance to the front.
+tray icon's ring shows the battery level, its menu switches presets and turns
+surround on or off, and left-clicking it opens the window. Launching the exe
+again also brings the running instance to the front.
+
+Ctrl+Z undoes the last sound or mic change (Ctrl+Y redoes). "Compare to before"
+switches between the current sound and the sound when you last picked a preset.
+
+**Presets per program**: add a rule for a program (pick it from the recently
+used list or type `game.exe`) and the preset changes when that program comes to
+the front. Other programs get the "other programs" preset, or nothing changes.
+Changes you make by hand stay until you switch to a program with a different
+preset.
+
+**Global hotkeys** (off by default): next preset, previous preset and surround
+on/off. The defaults are Ctrl+Alt+PageDown, Ctrl+Alt+PageUp and Ctrl+Alt+Home;
+click one to record another combination.
+
+**Preset files**: export saves your custom presets as JSON; import adds the
+presets from such a file and skips ones you already have.
 
 EQ curve: drag a point, click in a column to move that band there,
 double-click to reset it to 0 dB. You can also click the curve and use the

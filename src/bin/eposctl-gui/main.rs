@@ -3,8 +3,10 @@
 #![windows_subsystem = "windows"]
 
 mod config;
+mod dialog;
 mod eq;
 mod foreground;
+mod hotkeys;
 mod icons;
 mod notify;
 mod strings;
@@ -22,6 +24,7 @@ use eposctl::apo::{ApoChannel, Settings, layout::BANDS};
 use eposctl::presets::{self, Preset};
 
 use config::{AppRule, Config, CustomPreset, Last, Sound};
+use hotkeys::{Action, Combo};
 use icons::Icon;
 use strings::{Lang, Strings, t};
 use theme::{ACCENT, DANGER, FAINT, PANEL, RAISED, SECONDARY, TEXT, WARN};
@@ -112,6 +115,13 @@ struct App {
     auto_target: Option<String>,
     /// Program name typed into the "add rule" field.
     auto_input: String,
+
+    hotkeys: Option<hotkeys::Hotkeys>,
+    /// Hotkey being recorded; all hotkeys are unregistered meanwhile so the
+    /// current ones can be pressed again.
+    recording: Option<Action>,
+    /// Result of the last preset import/export: (message, succeeded).
+    io_msg: Option<(String, bool)>,
 }
 
 fn factory_label(s: &Strings, name: &str) -> &'static str {
@@ -216,6 +226,9 @@ impl App {
             auto_app: None,
             auto_target: None,
             auto_input: String::new(),
+            hotkeys: hotkeys::Hotkeys::spawn(cc.egui_ctx.clone()),
+            recording: None,
+            io_msg: None,
             cfg,
         };
         // Debug builds: `EPOSCTL_PAGE=mic|device|settings` opens on that page (for screenshots).
@@ -413,6 +426,177 @@ impl App {
         }
         self.ab_ref = self.s.as_ref().map(sound_of);
         self.group_until = None;
+    }
+
+    fn toggle_surround(&mut self) {
+        self.ensure_apo();
+        if let Some(on) = self.s.as_ref().map(|s| !s.surround()) {
+            self.apply(|s| s.set_surround(on));
+        }
+    }
+
+    /// Apply the next (`dir` = 1) or previous (-1) preset in the order shown on
+    /// the Sound page. From a sound that matches no preset, start at either end.
+    fn step_preset(&mut self, dir: isize) {
+        self.ensure_apo();
+        let Some(cur) = self.s.as_ref().map(sound_of) else { return };
+        let ids: Vec<String> = self.tray_presets().into_iter().map(|(id, _)| id).collect();
+        if ids.is_empty() {
+            return;
+        }
+        let at = factory()
+            .map(|p| matches(&cur, &p.speaker_eq, p.reverb, p.surround))
+            .chain(self.cfg.custom_presets.iter().map(|p| matches(&cur, &p.sound.speaker_eq, p.sound.reverb, p.sound.surround)))
+            .position(|m| m);
+        let n = ids.len() as isize;
+        let i = match at {
+            Some(i) => (i as isize + dir).rem_euclid(n),
+            None if dir > 0 => 0,
+            None => n - 1,
+        };
+        self.apply_preset_id(&ids[i as usize]);
+    }
+
+    // ---- global hotkeys ----
+
+    fn sync_hotkeys(&mut self) {
+        let hk = &mut self.cfg.hotkeys;
+        let wanted = if hk.enabled && self.recording.is_none() {
+            Action::ALL.map(|a| hk.slot(a.index()).as_deref().and_then(Combo::parse))
+        } else {
+            [None; 3]
+        };
+        if let Some(h) = &mut self.hotkeys {
+            h.set(wanted);
+        }
+    }
+
+    /// While recording, the next key press becomes the hotkey. Runs before
+    /// anything else reads keys so the press is not also handled as a shortcut.
+    fn record_hotkey(&mut self, ui: &mut Ui) {
+        let Some(a) = self.recording else { return };
+        let press = ui.input_mut(|i| {
+            let mut got = None;
+            i.events.retain(|e| match e {
+                egui::Event::Key { key, pressed: true, modifiers, .. } => {
+                    got = got.or(Some((*key, *modifiers)));
+                    false
+                }
+                egui::Event::Key { .. } | egui::Event::Text(_) => false,
+                _ => true,
+            });
+            got
+        });
+        let Some((key, m)) = press else { return };
+        let slot = self.cfg.hotkeys.slot(a.index());
+        match key {
+            egui::Key::Escape => {}
+            egui::Key::Backspace => *slot = None,
+            _ => match Combo::from_press(key, m) {
+                Some(c) => *slot = Some(c.label()),
+                None => return, // keep waiting for a valid combination
+            },
+        }
+        self.recording = None;
+        self.mark_dirty();
+    }
+
+    fn hotkeys_panel(&mut self, ui: &mut Ui) {
+        let s = self.s();
+        widgets::panel().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            let mut on = self.cfg.hotkeys.enabled;
+            if Self::setting_row(ui, s.hotkeys_title, s.hotkeys_desc, &mut on, true) {
+                self.cfg.hotkeys.enabled = on;
+                self.recording = None;
+                self.mark_dirty();
+            }
+            if !self.cfg.hotkeys.enabled {
+                return;
+            }
+            ui.add_space(8.0);
+            widgets::divider(ui);
+            ui.add_space(4.0);
+            for (a, label) in [(Action::NextPreset, s.hk_next), (Action::PrevPreset, s.hk_prev), (Action::ToggleSurround, s.hk_surround)] {
+                ui.horizontal(|ui| {
+                    ui.set_min_height(36.0);
+                    ui.label(RichText::new(label).color(TEXT));
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let rec = self.recording == Some(a);
+                        let text = if rec {
+                            s.hk_press.to_owned()
+                        } else {
+                            self.cfg.hotkeys.slot(a.index()).clone().unwrap_or_else(|| s.hk_unset.to_owned())
+                        };
+                        if widgets::ghost_toggle(ui, &text, true, rec).clicked() {
+                            self.recording = if rec { None } else { Some(a) };
+                        }
+                        if !rec && self.hotkeys.as_ref().is_some_and(|h| h.failed(a)) {
+                            ui.label(RichText::new(s.hk_in_use).font(theme::font(12.5)).color(DANGER));
+                        }
+                    });
+                });
+            }
+            if self.recording.is_some() {
+                ui.add_space(4.0);
+                widgets::desc(ui, s.hk_record_hint);
+            }
+        });
+    }
+
+    // ---- preset files ----
+
+    fn presets_io_panel(&mut self, ui: &mut Ui) {
+        let s = self.s();
+        widgets::panel().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.set_max_width(ui.available_width() - 170.0);
+                    widgets::heading(ui, s.presets_io_title);
+                    widgets::desc(ui, s.presets_io_desc);
+                });
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let any = !self.cfg.custom_presets.is_empty();
+                    if widgets::ghost_toggle(ui, s.export, any, false).clicked() {
+                        self.export_presets();
+                    }
+                    if widgets::ghost(ui, s.import).clicked() {
+                        self.import_presets();
+                    }
+                });
+            });
+            if let Some((msg, ok)) = &self.io_msg {
+                ui.add_space(6.0);
+                ui.label(RichText::new(msg).font(theme::font(12.5)).color(if *ok { ACCENT } else { DANGER }));
+            }
+        });
+    }
+
+    fn export_presets(&mut self) {
+        let s = self.s();
+        let Some(path) = dialog::json_file(true, "eposctl-presets.json") else { return };
+        let n = self.cfg.custom_presets.len();
+        self.io_msg = Some(match std::fs::write(&path, config::export_presets(&self.cfg.custom_presets)) {
+            Ok(()) => (s.exported.replace("{n}", &n.to_string()), true),
+            Err(e) => (s.io_failed.replace("{err}", &e.to_string()), false),
+        });
+    }
+
+    fn import_presets(&mut self) {
+        let s = self.s();
+        let Some(path) = dialog::json_file(false, "") else { return };
+        let parsed = std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| config::parse_presets(&t));
+        self.io_msg = Some(match parsed {
+            Ok(list) => match config::merge_presets(&mut self.cfg.custom_presets, list) {
+                0 => (s.import_nothing_new.to_owned(), true),
+                n => {
+                    self.after_presets_changed();
+                    (s.imported.replace("{n}", &n.to_string()), true)
+                }
+            },
+            Err(e) => (s.io_failed.replace("{err}", &e), false),
+        });
     }
 
     // ---- per-program presets ----
@@ -617,6 +801,7 @@ impl App {
             if resp.clicked() {
                 self.page = page;
                 self.naming = None;
+                self.recording = None;
                 self.stop_compare();
             }
             let sel = self.page == page;
@@ -1031,6 +1216,10 @@ impl App {
         ui.add_space(12.0);
         self.auto_panel(ui);
         ui.add_space(12.0);
+        self.hotkeys_panel(ui);
+        ui.add_space(12.0);
+        self.presets_io_panel(ui);
+        ui.add_space(12.0);
         widgets::panel().show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
@@ -1106,14 +1295,22 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
         if self.flags.take_toggle_surround() {
-            self.ensure_apo();
-            if let Some(on) = self.s.as_ref().map(|s| !s.surround()) {
-                self.apply(|s| s.set_surround(on));
-            }
+            self.toggle_surround();
         }
         if let Some(id) = self.flags.take_preset() {
             self.ensure_apo();
             self.apply_preset_id(&id);
+        }
+        if self.recording.is_some() && !ctx.input(|i| i.focused) {
+            self.recording = None;
+        }
+        self.sync_hotkeys();
+        for a in self.hotkeys.as_ref().map(|h| h.take_fired()).unwrap_or_default() {
+            match a {
+                Action::NextPreset => self.step_preset(1),
+                Action::PrevPreset => self.step_preset(-1),
+                Action::ToggleSurround => self.toggle_surround(),
+            }
         }
 
         self.ensure_apo();
@@ -1146,6 +1343,7 @@ impl eframe::App for App {
         if ui.ctx().dragged_id().is_some() && self.group_until.is_some() {
             self.group_until = Some(Instant::now() + UNDO_GROUP);
         }
+        self.record_hotkey(ui);
         if !ui.ctx().egui_wants_keyboard_input() {
             use egui::{Key, Modifiers};
             let (redo_shift, undo, redo) = ui.input_mut(|i| {
