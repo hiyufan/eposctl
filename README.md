@@ -1,116 +1,173 @@
+<div align="center">
+
+<img src="assets/logo.png" width="96" alt="eposctl logo">
+
 # eposctl
 
-Open-source control for EPOS gaming headsets on Windows. It does **not** need
-the discontinued EPOS Gaming Suite or its background service.
+**The EPOS Gaming Suite is gone. Your headset still works.**
 
-> Unofficial community project. Not affiliated with or endorsed by EPOS / Demant.
-> "EPOS" is a trademark of its respective owner.
+A small, open-source replacement for the discontinued EPOS Gaming Suite on Windows:
+EQ, presets, surround, mic, battery and more, in one portable exe.
 
-EPOS 已停止游戏耳机业务，官方 Gaming Suite 的服务器也已下线。本项目直接与耳机的
-音效驱动通信，不依赖官方软件及其后台服务。
+[![Release](https://img.shields.io/github/v/release/hiyufan/eposctl?color=2bd4bd)](https://github.com/hiyufan/eposctl/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/hiyufan/eposctl/total?color=2bd4bd)](https://github.com/hiyufan/eposctl/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4)](#get-started)
+[![License](https://img.shields.io/github/license/hiyufan/eposctl)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/hiyufan/eposctl?style=social)](https://github.com/hiyufan/eposctl/stargazers)
 
-## Status
+**English** | [简体中文](README.zh-CN.md)
 
-Early. Tested with the **EPOS H3PRO Hybrid** (USB dongle `1395:0303`).
+<a href="https://github.com/hiyufan/eposctl/releases/latest/download/eposctl-gui.exe"><img src="https://img.shields.io/badge/Download-eposctl--gui.exe-2bd4bd?style=for-the-badge&logo=windows&logoColor=white" height="44" alt="Download eposctl-gui.exe"></a>
 
-| Feature | Status |
+<sub>Windows 10/11 x64. No installer, no admin rights. Tested with the EPOS H3PRO Hybrid.</sub>
+
+<br>
+
+<img src="docs/images/en-sound.png" width="820" alt="eposctl sound page: presets, 9-band EQ, virtual 7.1 surround">
+
+</div>
+
+> [!NOTE]
+> Unofficial community project, not affiliated with or endorsed by EPOS or Demant.
+> "EPOS" is a trademark of its owner.
+
+## Why
+
+EPOS left the gaming business, the Gaming Suite was discontinued, and its
+servers are offline. Your headset's EQ, surround and mic processing run in the
+EPOS audio driver on your PC, and that driver still works. eposctl talks to it
+directly, so you keep every setting without the old app or its background service.
+
+- **One exe.** Nothing to install; delete it and it's gone.
+- **The same sound.** The factory presets match the official curves exactly.
+- **More than the original**: game presets, presets per program, global hotkeys,
+  a software ChatMix, AutoEQ import.
+- **Open source** (MIT), written in Rust.
+
+## Features
+
+| | |
 |---|---|
-| Speaker 9-band EQ | works |
-| Microphone 9-band EQ | works |
-| Factory presets (flat / music / esport / movie) | works, exact official curves |
-| Virtual 3D surround, reverb, noise gate | works |
-| Battery, firmware, serial, product name | works (HID) |
-| Sidetone level | works (HID); see note below |
-| Live events: ANC on/off, sidetone, headset link | works (`monitor`) |
-| Tray app with GUI (`eposctl-gui`) | works |
+| **Sound** | 9-band EQ you drag with the mouse, factory presets (music, esport, movie, flat), virtual 7.1 surround, reverb, undo/redo, compare to before |
+| **Game presets** | Footstep presets for **VALORANT**, **Delta Force**, **Call of Duty** and **PUBG**, tuned for the H3 series ([how they were made](docs/game-presets.md)) |
+| **Microphone** | Noise gate, sidetone, 9-band mic EQ |
+| **Your presets** | Save, overwrite, import and export as JSON; load an [AutoEQ](https://github.com/jaakkopasanen/AutoEq) or Equalizer APO file |
+| **Automation** | Switch preset when a game comes to the front, global hotkeys, move the Windows default sound devices when the headset turns off and back on |
+| **ChatMix** | Game / voice balance through the Windows volume mixer (Discord, KOOK, TeamSpeak, QQ, WeChat and more count as voice) |
+| **Device** | Battery with a runtime estimate, low-battery alerts, firmware, ANC state |
+| **Tray** | Battery ring icon, preset menu, surround toggle, start with Windows |
+| **Language** | English and 简体中文 |
 
-## Download
+<table>
+  <tr>
+    <td><img src="docs/images/en-mic.png" alt="Mic page: noise gate, sidetone, microphone EQ"></td>
+    <td><img src="docs/images/en-settings.png" alt="Settings page"></td>
+  </tr>
+</table>
 
-Prebuilt binaries are on the [Releases](https://github.com/hiyufan/eposctl/releases)
-page: unzip and run `eposctl-gui.exe`.
+## Get started
 
-## Requirements
+1. **Have the EPOS audio driver** (`EPOS APO`). The Gaming Suite installer puts
+   it on your system, so if you ever installed the Gaming Suite you have it.
+   The Gaming Suite app itself can stay closed or be uninstalled.
+2. **Download** [`eposctl-gui.exe`](https://github.com/hiyufan/eposctl/releases/latest/download/eposctl-gui.exe)
+   and put it anywhere.
+3. **Run it**, with the dongle plugged in and the headset on.
 
-- Windows 10/11
-- The EPOS audio driver (`EPOS APO`) installed. It comes with the Gaming Suite
-  installer; once installed, the Gaming Suite application itself is not needed.
+> [!TIP]
+> Windows may say "Windows protected your PC" because the exe is not code-signed.
+> Click **More info**, then **Run anyway**. Every release is built from this
+> source by [GitHub Actions](https://github.com/hiyufan/eposctl/actions/workflows/release.yml)
+> and lists the SHA-256 of each file.
 
-No administrator rights are required.
+## Supported headsets
 
-## GUI
+| Headset | Status |
+|---|---|
+| EPOS H3PRO Hybrid (USB dongle `1395:0303`) | Tested, all features work |
+| Other EPOS gaming headsets | Untested. [Send a device report](https://github.com/hiyufan/eposctl/issues/new?template=device-report.yml) |
 
-`eposctl-gui.exe` is a tray app laid out like the official suite. It has four pages:
+Have another model? Run `eposctl report --query` and attach the output to a
+[device report](https://github.com/hiyufan/eposctl/issues/new?template=device-report.yml).
+It only reads from the headset and leaves out the serial number. Reports are
+how new models get supported.
 
-- **音效 / Sound**: presets, a draggable 9-band EQ curve, virtual 7.1 surround and reverb
-- **麦克风 / Mic**: noise gate, sidetone, microphone EQ
-- **设备 / Device**: model, serial, firmware, battery, ANC state
-- **设置 / Settings**: language (中文 / English), minimize to tray on close, start with Windows,
-  restore the last sound settings on start, low-battery alerts, presets per program,
-  global hotkeys, preset import/export
+## FAQ
 
-You can save your own presets. Right-click one to overwrite or delete it. The
-tray icon's ring shows the battery level, its menu switches presets and turns
-surround on or off, and left-clicking it opens the window. Launching the exe
-again also brings the running instance to the front.
+<details>
+<summary><b>Do I need the EPOS Gaming Suite?</b></summary>
 
-Ctrl+Z undoes the last sound or mic change (Ctrl+Y redoes). "Compare to before"
-switches between the current sound and the sound when you last picked a preset.
+Only its driver. The sound settings are applied by the EPOS audio driver
+(`EAPO.dll`), which the Gaming Suite installer puts on your system. The app and
+its service are not needed.
+</details>
 
-**Presets per program**: add a rule for a program (pick it from the recently
-used list or type `game.exe`) and the preset changes when that program comes to
-the front. Other programs get the "other programs" preset, or nothing changes.
-Changes you make by hand stay until you switch to a program with a different
-preset.
+<details>
+<summary><b>Does it change my headset's firmware?</b></summary>
 
-**Global hotkeys** (off by default): next preset, previous preset and surround
-on/off. The defaults are Ctrl+Alt+PageDown, Ctrl+Alt+PageUp and Ctrl+Alt+Home;
-click one to record another combination.
+No. EQ, surround, reverb and the noise gate are processed by the driver on your
+PC. The only setting eposctl sends to the headset is the sidetone level, as the
+official app did.
+</details>
 
-**Sound devices follow the headset**: the dongle stays plugged in when the
-headset is off, so Windows keeps sending sound to it. With this on, turning the
-headset off moves the default playback and recording devices to the ones you
-pick (say, the speakers and the built-in mic), and turning it on moves them back.
+<details>
+<summary><b>My settings reset after I replugged the dongle.</b></summary>
 
-**Game / voice balance** (Sound page): a software ChatMix. Left makes the game
-louder, right makes voice chat louder, using the per-program volumes in the
-Windows volume mixer. Volumes you set by hand stay in proportion, and turning it
-off puts them back. Voice programs (Discord, KOOK, YY, QQ, WeChat, TeamSpeak, …)
-can be edited; everything else counts as game. Two hotkeys can nudge it.
+The driver can fall back to its defaults. Keep "Restore last sound settings on
+start" on and let eposctl start with Windows; it puts your settings back.
+</details>
 
-The Device page and the tray tooltip show roughly how long the battery will
-last, measured from how fast it drains while the headset is on.
+<details>
+<summary><b>Where are my settings stored?</b></summary>
 
-**Preset files**: export saves your custom presets as JSON; import adds the
-presets from such a file and skips ones you already have.
+In `%APPDATA%\eposctl\config.json`. "Start with Windows" adds
+`eposctl-gui.exe --minimized` to `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+</details>
 
-**Game presets**: VALORANT, Delta Force, Call of Duty and PUBG presets for
-hearing footsteps, tuned for the H3 series. See [docs/game-presets.md](docs/game-presets.md)
-for how they were made and the sources. They pair well with per-program presets.
+## Using it
 
-**EQ files**: "Import" next to either EQ loads an Equalizer APO or AutoEQ file
-(`ParametricEQ.txt`, `GraphicEQ.txt` or the CSV), so a headphone correction
-from [AutoEQ](https://github.com/jaakkopasanen/AutoEq) can be used directly.
-The curve is read off at the nine band centres (62.5 Hz to 16 kHz, one octave
-apart) and moved up or down to fit the ±6 dB range; the preamp is ignored.
-The band frequencies come from the EPOS APO's code, not from a measurement.
+<details>
+<summary><b>Tips for the app</b></summary>
 
-EQ curve: drag a point, click in a column to move that band there,
-double-click to reset it to 0 dB. You can also click the curve and use the
-arrow keys: ←/→ selects a band, ↑/↓ changes it by 0.5 dB, and Shift+↑/↓ by 1 dB.
+- **EQ**: drag a point, click in a column to move that band there, double-click
+  to reset it to 0 dB. Click the curve, then ←/→ picks a band and ↑/↓ changes it
+  by 0.5 dB (Shift: 1 dB). Ctrl+Z / Ctrl+Y undo and redo.
+- **Compare to before** switches between the current sound and the sound when
+  you last picked a preset.
+- **Your presets**: right-click one to overwrite or delete it.
+- **Presets per program**: add a rule for a program (pick it from the recently
+  used list or type `game.exe`) and the preset changes when it comes to the front.
+  Other programs get the "other programs" preset, or nothing changes. Changes
+  you make by hand stay until you switch to a program with a different preset.
+- **Global hotkeys** (off by default): next preset, previous preset, surround
+  on/off. Defaults are Ctrl+Alt+PageDown, Ctrl+Alt+PageUp and Ctrl+Alt+Home;
+  click one to record another.
+- **Switch sound devices with the headset**: the dongle stays plugged in when
+  the headset is off, so Windows keeps sending sound to it. With this on,
+  turning the headset off moves the default playback and recording devices to
+  the ones you pick, and turning it on moves them back.
+- **Game / voice balance**: left makes the game louder, right makes voice chat
+  louder. Volumes you set by hand stay in proportion, and turning it off puts
+  them back. Two hotkeys can nudge it.
+- **EQ files**: "Import" next to either EQ loads `ParametricEQ.txt`,
+  `GraphicEQ.txt` or an AutoEQ CSV. The curve is read at the nine band centres
+  (62.5 Hz to 16 kHz, one octave apart) and shifted to fit ±6 dB; the preamp is
+  ignored.
+- The tray icon's ring shows the battery level. Left-click opens the window.
+  Launching the exe again brings the running one to the front.
+</details>
 
-Settings are stored in `%APPDATA%\eposctl\config.json`. "Start with Windows"
-adds `eposctl-gui.exe --minimized` to `HKCU\...\Run`.
-
-## Command line
+<details>
+<summary><b>Command line (<code>eposctl.exe</code>)</b></summary>
 
 ```text
 eposctl list                     # devices exposing an EPOS APO channel
 eposctl status [--raw]           # current DSP settings
 eposctl preset music             # flat | music | esport | movie
-eposctl preset valorant          # game presets: valorant | delta-force | cod | pubg
+eposctl preset valorant          # valorant | delta-force | cod | pubg
 eposctl eq 6 4 1 0 -1 0 1 4 6    # 9 speaker bands in dB (-6..6), low to high
 eposctl mic-eq 0 0 0 0 0 0 0 0 0
-eposctl eq-import ParametricEQ.txt [--mic] [--dry-run]   # Equalizer APO / AutoEQ file
+eposctl eq-import ParametricEQ.txt [--mic] [--dry-run]
 eposctl surround on
 eposctl reverb 30                # percent
 eposctl gate 40                  # percent
@@ -127,20 +184,24 @@ eposctl audio default mic --input
 eposctl audio sessions           # programs playing on the default device, with volume
 ```
 
-Sidetone note: on the H3PRO used for testing, sidetone was inaudible at every
-level from both the official app and eposctl, although the headset accepts and
-reports the value. Reports from other units are welcome.
+`eposctl.exe` is attached to every release. From Git Bash, write paths with
+forward slashes (`D:/tools/eposctl.exe`).
 
-From Git Bash or other POSIX shells, write the path with forward slashes
-(`D:/path/to/eposctl.exe`); backslashes are treated as escapes.
+Sidetone: on the H3PRO used for testing, sidetone was inaudible at every level,
+from both the official app and eposctl, although the headset accepts and reports
+the value. Reports from other units are welcome.
+</details>
 
-## Other EPOS models
+## How it works
 
-Only the H3PRO Hybrid has been tested. If you have another EPOS headset, run
-`eposctl report --query` and open a
-[device report](https://github.com/hiyufan/eposctl/issues/new?template=device-report.yml).
-The report is read-only and leaves out the serial number. See [ROADMAP.md](ROADMAP.md)
-for what is planned.
+The EPOS APO (`EAPO.dll`, loaded by `audiodg.exe`) reads its settings from a
+named shared-memory block that the official service used to write. eposctl
+writes the same block directly. Battery, firmware and sidetone go over HID to
+the dongle. [docs/protocol.md](docs/protocol.md) has the layout and the
+evidence for each field, and [ROADMAP.md](ROADMAP.md) has what comes next.
+
+Prior art: [eposwitch](https://github.com/Ad-Bean/eposwitch) talks to the
+official service over its named pipes. Its notes were a useful reference.
 
 ## Building
 
@@ -148,19 +209,13 @@ for what is planned.
 cargo build --release
 ```
 
-With only MinGW available (no MSVC build tools), use the GNU toolchain:
+With only MinGW (no MSVC build tools), use the GNU toolchain:
 `rustup override set stable-x86_64-pc-windows-gnu`.
 
-## How it works
+## Contributing
 
-The EPOS APO (`EAPO.dll`, loaded by `audiodg.exe`) reads its settings from a
-named shared-memory block that the original service used to write. eposctl
-writes the same block directly. See [docs/protocol.md](docs/protocol.md) for the
-layout and the evidence behind each field.
-
-Prior art: [eposwitch](https://github.com/Ad-Bean/eposwitch) is a control
-panel that talks to the official service over its named pipes. Its pipe and HID
-notes were a useful reference.
+Bug reports, device reports and pull requests are welcome. If eposctl brought
+your headset back to life, **a ⭐ helps other EPOS owners find it.**
 
 ## License
 

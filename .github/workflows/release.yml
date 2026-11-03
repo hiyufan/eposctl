@@ -18,12 +18,19 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
+          # The exes are attached on their own, so most people never deal with
+          # a zip; the zip also carries the README and licence.
           $name = "eposctl-${{ github.ref_name }}-windows-x64"
-          New-Item -ItemType Directory $name | Out-Null
-          Copy-Item target/release/eposctl.exe, target/release/eposctl-gui.exe, README.md, LICENSE $name
-          Compress-Archive -Path $name -DestinationPath "$name.zip"
+          New-Item -ItemType Directory $name, dist | Out-Null
+          Copy-Item target/release/eposctl.exe, target/release/eposctl-gui.exe, README.md, README.zh-CN.md, LICENSE $name
+          Compress-Archive -Path $name -DestinationPath "dist/$name.zip"
+          Copy-Item target/release/eposctl-gui.exe, target/release/eposctl.exe dist
+          Get-ChildItem dist | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          } | Set-Content dist/SHA256SUMS.txt
+          Get-Content dist/SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
-          files: eposctl-*.zip
+          files: dist/*
           body_path: .github/release-notes.md
           generate_release_notes: true

@@ -1634,6 +1634,8 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let d = self.dev.lock().unwrap().clone();
+        #[cfg(debug_assertions)]
+        debug_screenshot(ui.ctx());
 
         // A drag (EQ point, slider) is one undo step however long it lasts.
         if ui.ctx().dragged_id().is_some() && self.group_until.is_some() {
@@ -1689,6 +1691,39 @@ impl eframe::App for App {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         Color32::from_rgb(0x17, 0x18, 0x1E).to_normalized_gamma_f32()
     }
+}
+
+/// Debug builds: `EPOSCTL_SHOT=file.png` saves a screenshot of the window once
+/// it has settled, then exits. Used for the README images.
+/// `EPOSCTL_SHOT_DELAY` (seconds, default 3) and `EPOSCTL_SHOT_HEIGHT` (logical
+/// points from the top, default the whole window) are optional.
+#[cfg(debug_assertions)]
+fn debug_screenshot(ctx: &egui::Context) {
+    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static START: OnceLock<Instant> = OnceLock::new();
+    static ASKED: AtomicBool = AtomicBool::new(false);
+    let Some(path) = std::env::var_os("EPOSCTL_SHOT") else { return };
+    let start = *START.get_or_init(Instant::now);
+    let env = |k: &str, d: f32| std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
+    let delay = env("EPOSCTL_SHOT_DELAY", 3.0);
+    let height = env("EPOSCTL_SHOT_HEIGHT", f32::INFINITY);
+    if start.elapsed().as_secs_f32() > delay && !ASKED.swap(true, Ordering::Relaxed) {
+        let ppp = ctx.pixels_per_point();
+        let screen = ctx.content_rect();
+        let crop = egui::Rect::from_min_max(screen.min, egui::pos2(screen.max.x, screen.max.y.min(height)));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::ScreenshotCallback::new(move |img| {
+            let img = img.region(&crop, Some(ppp));
+            let file = std::fs::File::create(&path).expect("screenshot file");
+            let mut enc = png::Encoder::new(std::io::BufWriter::new(file), img.width() as u32, img.height() as u32);
+            enc.set_color(png::ColorType::Rgba);
+            enc.set_depth(png::BitDepth::Eight);
+            let bytes: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_array()).collect();
+            enc.write_header().and_then(|mut w| w.write_image_data(&bytes)).expect("write png");
+            std::process::exit(0);
+        })));
+    }
+    ctx.request_repaint();
 }
 
 /// Named event shared by all instances. A second launch signals it and exits;
