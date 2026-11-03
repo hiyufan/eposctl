@@ -3,6 +3,7 @@
 #![windows_subsystem = "windows"]
 
 mod battery;
+mod chatmix;
 mod config;
 mod devswitch;
 mod dialog;
@@ -129,6 +130,9 @@ struct App {
     last_linked: Option<bool>,
     devices: devswitch::Devices,
     battery: battery::Tracker,
+    mixer: chatmix::Mixer,
+    /// Program name typed into the voice-apps field.
+    mix_input: String,
 }
 
 fn factory_label(s: &Strings, name: &str) -> &'static str {
@@ -239,6 +243,8 @@ impl App {
             last_linked: None,
             devices: devswitch::Devices::new(cc.egui_ctx.clone()),
             battery: battery::Tracker::default(),
+            mixer: chatmix::Mixer::spawn(),
+            mix_input: String::new(),
             cfg,
         };
         // Debug builds: `EPOSCTL_PAGE=mic|device|settings` opens on that page (for screenshots).
@@ -474,7 +480,7 @@ impl App {
         let wanted = if hk.enabled && self.recording.is_none() {
             Action::ALL.map(|a| hk.slot(a.index()).as_deref().and_then(Combo::parse))
         } else {
-            [None; 3]
+            [None; hotkeys::N]
         };
         if let Some(h) = &mut self.hotkeys {
             h.set(wanted);
@@ -527,7 +533,14 @@ impl App {
             ui.add_space(8.0);
             widgets::divider(ui);
             ui.add_space(4.0);
-            for (a, label) in [(Action::NextPreset, s.hk_next), (Action::PrevPreset, s.hk_prev), (Action::ToggleSurround, s.hk_surround)] {
+            let rows = [
+                (Action::NextPreset, s.hk_next),
+                (Action::PrevPreset, s.hk_prev),
+                (Action::ToggleSurround, s.hk_surround),
+                (Action::MixVoice, s.hk_mix_voice),
+                (Action::MixGame, s.hk_mix_game),
+            ];
+            for (a, label) in rows {
                 ui.horizontal(|ui| {
                     ui.set_min_height(36.0);
                     ui.label(RichText::new(label).color(TEXT));
@@ -1130,6 +1143,107 @@ impl App {
                 self.apply(|st| st.set_reverb(v));
             }
         });
+        ui.add_space(12.0);
+        self.mix_panel(ui);
+    }
+
+    fn nudge_mix(&mut self, by: f32) {
+        let m = &mut self.cfg.chat_mix;
+        if m.enabled {
+            m.balance = ((m.balance + by) * 10.0).round().clamp(-10.0, 10.0) / 10.0;
+            self.mark_dirty();
+        }
+    }
+
+    fn mix_panel(&mut self, ui: &mut Ui) {
+        let s = self.s();
+        widgets::panel().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            let mut on = self.cfg.chat_mix.enabled;
+            if Self::setting_row(ui, s.mix_title, s.mix_desc, &mut on, true) {
+                self.cfg.chat_mix.enabled = on;
+                self.mark_dirty();
+            }
+            if !self.cfg.chat_mix.enabled {
+                return;
+            }
+            ui.add_space(10.0);
+            let b = self.cfg.chat_mix.balance;
+            let value = if b.abs() < 0.005 {
+                s.mix_center.to_owned()
+            } else {
+                let side = if b > 0.0 { s.mix_game } else { s.mix_voice };
+                s.mix_lowered.replace("{side}", side).replace("{pct}", &format!("{:.0}", b.abs() * 100.0))
+            };
+            widgets::row_title(ui, "", Some(value), true);
+            let mut changed = None;
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(s.mix_game).color(SECONDARY));
+                let label_w = 48.0;
+                ui.allocate_ui(vec2((ui.available_width() - label_w).max(80.0), 26.0), |ui| {
+                    let mut v = (b + 1.0) / 2.0;
+                    let r = widgets::slider(ui, &mut v, true);
+                    if r.double_clicked() {
+                        changed = Some(0.0);
+                    } else if r.changed() {
+                        // Snap to the centre near the middle so "both full" is easy to hit.
+                        let nb = v * 2.0 - 1.0;
+                        changed = Some(if nb.abs() < 0.04 { 0.0 } else { nb });
+                    }
+                });
+                ui.label(RichText::new(s.mix_voice).color(SECONDARY));
+            });
+            if let Some(nb) = changed {
+                self.cfg.chat_mix.balance = nb;
+                self.mark_dirty();
+            }
+
+            ui.add_space(8.0);
+            widgets::divider(ui);
+            ui.add_space(8.0);
+            widgets::desc(ui, s.mix_apps);
+            ui.add_space(6.0);
+            let mut remove = None;
+            ui.horizontal_wrapped(|ui| {
+                for (i, app) in self.cfg.chat_mix.voice_apps.iter().enumerate() {
+                    if widgets::ghost(ui, &format!("{app}  ×")).clicked() {
+                        remove = Some(i);
+                    }
+                }
+            });
+            let mut add = None;
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                let te = ui.add(
+                    egui::TextEdit::singleline(&mut self.mix_input)
+                        .hint_text(s.mix_app_hint)
+                        .desired_width(240.0)
+                        .margin(Margin::symmetric(10, 7)),
+                );
+                let enter = te.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if (widgets::primary(ui, s.add).clicked() || enter)
+                    && let Some(exe) = exe_name(&self.mix_input)
+                {
+                    add = Some(exe);
+                    self.mix_input.clear();
+                }
+            });
+            let apps = &mut self.cfg.chat_mix.voice_apps;
+            let mut dirty = false;
+            if let Some(i) = remove {
+                apps.remove(i);
+                dirty = true;
+            }
+            if let Some(exe) = add
+                && !apps.contains(&exe)
+            {
+                apps.push(exe);
+                dirty = true;
+            }
+            if dirty {
+                self.mark_dirty();
+            }
+        });
     }
 
     fn after_presets_changed(&mut self) {
@@ -1396,6 +1510,7 @@ impl eframe::App for App {
         if self.flags.quit_requested() && !self.quitting {
             self.quitting = true;
             self.stop_compare();
+            self.mixer.shutdown();
             self.cfg.save();
             self.tray = None; // remove the icon now rather than leaving a ghost
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -1423,11 +1538,14 @@ impl eframe::App for App {
             self.recording = None;
         }
         self.sync_hotkeys();
+        self.mixer.set(&self.cfg.chat_mix);
         for a in self.hotkeys.as_ref().map(|h| h.take_fired()).unwrap_or_default() {
             match a {
                 Action::NextPreset => self.step_preset(1),
                 Action::PrevPreset => self.step_preset(-1),
                 Action::ToggleSurround => self.toggle_surround(),
+                Action::MixVoice => self.nudge_mix(0.2),
+                Action::MixGame => self.nudge_mix(-0.2),
             }
         }
 
@@ -1504,6 +1622,7 @@ impl eframe::App for App {
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.stop_compare();
+        self.mixer.shutdown();
         self.cfg.save();
     }
 

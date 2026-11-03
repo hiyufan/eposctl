@@ -21,10 +21,16 @@ pub enum Action {
     NextPreset,
     PrevPreset,
     ToggleSurround,
+    MixVoice,
+    MixGame,
 }
 
+/// Number of hotkey slots.
+pub const N: usize = 5;
+
 impl Action {
-    pub const ALL: [Action; 3] = [Action::NextPreset, Action::PrevPreset, Action::ToggleSurround];
+    pub const ALL: [Action; N] =
+        [Action::NextPreset, Action::PrevPreset, Action::ToggleSurround, Action::MixVoice, Action::MixGame];
 
     pub fn index(self) -> usize {
         self as usize
@@ -119,9 +125,9 @@ fn vk(key: Key) -> Option<u32> {
 const WM_REREGISTER: u32 = WM_APP + 1;
 
 struct Shared {
-    wanted: Mutex<[Option<Combo>; 3]>,
+    wanted: Mutex<[Option<Combo>; N]>,
     /// Combos that could not be registered (another program already uses them).
-    failed: Mutex<[bool; 3]>,
+    failed: Mutex<[bool; N]>,
     fired: AtomicU8,
     ctx: egui::Context,
 }
@@ -130,14 +136,14 @@ pub struct Hotkeys {
     shared: Arc<Shared>,
     thread: u32,
     /// Last set passed to the thread, to skip redundant re-registration.
-    current: [Option<Combo>; 3],
+    current: [Option<Combo>; N],
 }
 
 impl Hotkeys {
     pub fn spawn(ctx: egui::Context) -> Option<Self> {
         let shared = Arc::new(Shared {
-            wanted: Mutex::new([None; 3]),
-            failed: Mutex::new([false; 3]),
+            wanted: Mutex::new([None; N]),
+            failed: Mutex::new([false; N]),
             fired: AtomicU8::new(0),
             ctx,
         });
@@ -153,7 +159,7 @@ impl Hotkeys {
                     WM_REREGISTER => register(&sh),
                     WM_HOTKEY => {
                         let id = msg.wParam;
-                        if (1..=3).contains(&id) {
+                        if (1..=N).contains(&id) {
                             sh.fired.fetch_or(1 << (id - 1), Ordering::Relaxed);
                             sh.ctx.request_repaint();
                         }
@@ -163,11 +169,11 @@ impl Hotkeys {
             }
         });
         let thread = rx.recv().ok()?;
-        Some(Self { shared, thread, current: [None; 3] })
+        Some(Self { shared, thread, current: [None; N] })
     }
 
     /// Register exactly these combos (indexed like `Action::ALL`); `None` = no hotkey.
-    pub fn set(&mut self, wanted: [Option<Combo>; 3]) {
+    pub fn set(&mut self, wanted: [Option<Combo>; N]) {
         if wanted == self.current {
             return;
         }
@@ -190,7 +196,7 @@ impl Hotkeys {
 /// Runs on the hotkey thread: registrations belong to the thread that made them.
 fn register(sh: &Shared) {
     let wanted = *sh.wanted.lock().unwrap();
-    let mut failed = [false; 3];
+    let mut failed = [false; N];
     for (i, combo) in wanted.iter().enumerate() {
         let id = i as i32 + 1;
         unsafe { UnregisterHotKey(std::ptr::null_mut(), id) };

@@ -83,6 +83,8 @@ enum AudioCmd {
         #[arg(long)]
         input: bool,
     },
+    /// List programs playing on the default playback device, with their volume
+    Sessions,
 }
 
 fn audio(cmd: Option<AudioCmd>) -> std::io::Result<()> {
@@ -104,6 +106,12 @@ fn audio(cmd: Option<AudioCmd>) -> std::io::Result<()> {
             let ep = audio::find(flow, &device).map_err(std::io::Error::other)?;
             audio::set_default(&ep.id).map_err(err)?;
             println!("default {}: {}", if input { "recording" } else { "playback" }, ep.name);
+        }
+        Some(AudioCmd::Sessions) => {
+            for s in audio::sessions(None).map_err(err)? {
+                let vol = s.volume().map(|v| format!("{:3.0}%", v * 100.0)).unwrap_or_else(|_| "  ?".into());
+                println!("{vol}  {}", s.exe.as_deref().unwrap_or("?"));
+            }
         }
     }
     Ok(())

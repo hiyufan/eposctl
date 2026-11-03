@@ -66,6 +66,20 @@ preset.
 on/off. The defaults are Ctrl+Alt+PageDown, Ctrl+Alt+PageUp and Ctrl+Alt+Home;
 click one to record another combination.
 
+**Sound devices follow the headset**: the dongle stays plugged in when the
+headset is off, so Windows keeps sending sound to it. With this on, turning the
+headset off moves the default playback and recording devices to the ones you
+pick (say, the speakers and the built-in mic), and turning it on moves them back.
+
+**Game / voice balance** (Sound page): a software ChatMix. Left makes the game
+louder, right makes voice chat louder, using the per-program volumes in the
+Windows volume mixer. Volumes you set by hand stay in proportion, and turning it
+off puts them back. Voice programs (Discord, KOOK, YY, QQ, WeChat, TeamSpeak, …)
+can be edited; everything else counts as game. Two hotkeys can nudge it.
+
+The Device page and the tray tooltip show roughly how long the battery will
+last, measured from how fast it drains while the headset is on.
+
 **Preset files**: export saves your custom presets as JSON; import adds the
 presets from such a file and skips ones you already have.
 
@@ -93,6 +107,11 @@ eposctl info                     # name, serial, firmware, battery, sidetone (HI
 eposctl sidetone [0-255]         # show or set sidetone level
 eposctl monitor [--raw]          # print headset events (read-only)
 eposctl report [--query]         # read-only device report for a GitHub issue
+
+eposctl audio                    # Windows playback/recording devices, * = default
+eposctl audio default speaker    # make a device the default (part of its name)
+eposctl audio default mic --input
+eposctl audio sessions           # programs playing on the default device, with volume
 ```
 
 Sidetone note: on the H3PRO used for testing, sidetone was inaudible at every

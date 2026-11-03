@@ -112,6 +112,27 @@ pub struct AutoPresets {
     pub rules: Vec<AppRule>,
 }
 
+/// Game/voice balance over the per-program volumes in the Windows mixer.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChatMix {
+    pub enabled: bool,
+    /// -1 = only game, 0 = both at full volume, 1 = only voice.
+    pub balance: f32,
+    /// Lower-case executable names of voice chat programs.
+    pub voice_apps: Vec<String>,
+}
+
+impl Default for ChatMix {
+    fn default() -> Self {
+        let apps = [
+            "discord.exe", "kook.exe", "yy.exe", "qq.exe", "weixin.exe", "wechat.exe", "teamspeak.exe",
+            "ts3client_win64.exe", "mumble.exe", "skype.exe", "zoom.exe", "ms-teams.exe",
+        ];
+        Self { enabled: false, balance: 0.0, voice_apps: apps.map(String::from).to_vec() }
+    }
+}
+
 /// Switch the Windows default devices when the headset is turned off and on.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -130,6 +151,8 @@ pub struct Hotkeys {
     pub next_preset: Option<String>,
     pub prev_preset: Option<String>,
     pub toggle_surround: Option<String>,
+    pub mix_voice: Option<String>,
+    pub mix_game: Option<String>,
 }
 
 impl Default for Hotkeys {
@@ -139,6 +162,8 @@ impl Default for Hotkeys {
             next_preset: Some("Ctrl+Alt+PageDown".into()),
             prev_preset: Some("Ctrl+Alt+PageUp".into()),
             toggle_surround: Some("Ctrl+Alt+Home".into()),
+            mix_voice: None,
+            mix_game: None,
         }
     }
 }
@@ -149,7 +174,9 @@ impl Hotkeys {
         match i {
             0 => &mut self.next_preset,
             1 => &mut self.prev_preset,
-            _ => &mut self.toggle_surround,
+            2 => &mut self.toggle_surround,
+            3 => &mut self.mix_voice,
+            _ => &mut self.mix_game,
         }
     }
 }
@@ -167,6 +194,7 @@ pub struct Config {
     pub auto: AutoPresets,
     pub hotkeys: Hotkeys,
     pub device_switch: DeviceSwitch,
+    pub chat_mix: ChatMix,
     pub last: Last,
 }
 
@@ -182,6 +210,7 @@ impl Default for Config {
             auto: AutoPresets::default(),
             hotkeys: Hotkeys::default(),
             device_switch: DeviceSwitch::default(),
+            chat_mix: ChatMix::default(),
             last: Last::default(),
         }
     }

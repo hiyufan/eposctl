@@ -23,6 +23,14 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
 - [x] Global hotkeys (next/previous preset, surround on/off)
 - [x] Export and import presets as JSON
 
+## 0.4: things the official suite never had
+
+- [x] Switch the Windows default playback/recording devices when the headset is turned off
+      and back on (the dongle stays plugged in, so Windows does not notice on its own)
+- [x] Battery runtime estimate from the measured drain rate
+- [x] Game/voice balance over the per-program volumes in the Windows mixer (software ChatMix),
+      with hotkeys
+
 ## Research track (runs alongside the above)
 
 - [ ] `eposctl raw`: send read-only HID requests to decode the unknown getters
@@ -34,9 +42,7 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
 
 ## Later
 
-- Voice/game volume balance using Windows per-application volume (not a real ChatMix)
 - More EPOS models, driven by device reports
-- Actions on headset connect/disconnect
 
 ## Not planned
 

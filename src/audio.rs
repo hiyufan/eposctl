@@ -7,9 +7,11 @@
 use std::ffi::c_void;
 
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
+use windows::Win32::Foundation::S_OK;
 use windows::Win32::Media::Audio::{
-    DEVICE_STATE_ACTIVE, EDataFlow, ERole, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, eCapture,
-    eCommunications, eConsole, eMultimedia, eRender,
+    AudioSessionStateExpired, DEVICE_STATE_ACTIVE, EDataFlow, ERole, IAudioSessionControl2, IAudioSessionManager2,
+    IMMDevice, IMMDeviceEnumerator, ISimpleAudioVolume, MMDeviceEnumerator, eCapture, eCommunications, eConsole,
+    eMultimedia, eRender,
 };
 use windows::Win32::System::Com::StructuredStorage::PropVariantToStringAlloc;
 use windows::Win32::System::Com::{
@@ -144,4 +146,76 @@ pub fn find(flow: Flow, pattern: &str) -> Result<Endpoint, String> {
             many.iter().map(|e| e.name.as_str()).collect::<Vec<_>>().join(", ")
         )),
     }
+}
+
+/// One program's audio stream on a device, as listed in the Windows volume mixer.
+/// Holds COM objects, so it stays on the thread that listed it.
+pub struct Session {
+    /// Identifies this stream; stable while the program keeps playing.
+    pub id: String,
+    /// Lower-case executable name, if the process could be queried.
+    pub exe: Option<String>,
+    volume: ISimpleAudioVolume,
+}
+
+impl Session {
+    pub fn volume(&self) -> windows::core::Result<f32> {
+        unsafe { self.volume.GetMasterVolume() }
+    }
+
+    pub fn set_volume(&self, v: f32) -> windows::core::Result<()> {
+        unsafe { self.volume.SetMasterVolume(v.clamp(0.0, 1.0), std::ptr::null()) }
+    }
+}
+
+/// Program streams on a device (`None`: the default playback device). The
+/// Windows system-sounds stream and expired streams are left out.
+pub fn sessions(device: Option<&str>) -> windows::core::Result<Vec<Session>> {
+    let e = enumerator()?;
+    unsafe {
+        let dev = match device {
+            Some(id) => e.GetDevice(&HSTRING::from(id))?,
+            None => e.GetDefaultAudioEndpoint(eRender, eConsole)?,
+        };
+        let mgr: IAudioSessionManager2 = dev.Activate(CLSCTX_ALL, None)?;
+        let list = mgr.GetSessionEnumerator()?;
+        let mut out = Vec::new();
+        for i in 0..list.GetCount()? {
+            let Ok(ctl) = list.GetSession(i) else { continue };
+            let Ok(ctl2) = ctl.cast::<IAudioSessionControl2>() else { continue };
+            if ctl2.IsSystemSoundsSession() == S_OK || ctl.GetState().is_ok_and(|s| s == AudioSessionStateExpired) {
+                continue;
+            }
+            let (Ok(id), Ok(volume)) = (ctl2.GetSessionInstanceIdentifier(), ctl.cast::<ISimpleAudioVolume>()) else {
+                continue;
+            };
+            let exe = ctl2.GetProcessId().ok().and_then(exe_of_pid);
+            out.push(Session { id: take(id), exe, volume });
+        }
+        Ok(out)
+    }
+}
+
+/// Lower-case executable file name of a process.
+pub fn exe_of_pid(pid: u32) -> Option<String> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+    };
+    if pid == 0 {
+        return None;
+    }
+    let h = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if h.is_null() {
+        return None;
+    }
+    let mut buf = [0u16; 1024];
+    let mut len = buf.len() as u32;
+    let ok = unsafe { QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len) };
+    unsafe { CloseHandle(h) };
+    if ok == 0 {
+        return None;
+    }
+    let path = String::from_utf16_lossy(&buf[..len as usize]);
+    path.rsplit(['\\', '/']).next().map(str::to_lowercase).filter(|n| !n.is_empty())
 }
