@@ -187,17 +187,37 @@ Recovered with Ghidra 12.1.4 from `EPOSGamingSuiteService` 1.12.2
 | 14 | `12, 03` | battery percent (`GetBatPercentage` reads offsets 0x11–0x12) | verified by eposctl |
 | 16 | `0A, 0C` | get sidetone (`GetSideToneGain` reads offset 0x11) | verified by eposctl |
 | 17 | `0A, 0B` + value | set sidetone | verified by eposctl (ack status 0, read-back matches) |
-| 18 | `0A, 11` + value | setter, unknown | |
-| 19 | `0A, 12` | getter, unknown; returns `1` on H3PRO | read by eposctl |
+| 18 | `0A, 11` + value | set noise reduction level (inferred: pairs with 19) | not tried |
+| 19 | `0A, 12` | get noise reduction level (`GetNoiseReductionLevel` reads offset 0x11); returns `1` on H3PRO | read by eposctl |
 | 20 | `01, 14` | | answered on connect (`0x0101`) |
 | 21 | `08, F0` | | |
-| 22 | `0A, 16` + value | setter, unknown | |
-| 23 | `0A, 17` | getter, unknown | no response on H3PRO |
+| 22 | `0A, 16` + value | set latency level (inferred: pairs with 23) | not tried |
+| 23 | `0A, 17` | get latency level (`GetLatencyLevel` reads offset 0x13, signed) | no response on H3PRO |
 | 24 | `06, 32` + value | setter, unknown | |
 | 25 | `06, 11` | | |
 | 26 | `01, 1F` + value | setter, unknown | |
 | 27 | `01, 20` | | answered on connect (`1`) |
 | 28 | `06, 1C` | | |
+
+The meaning of opcodes 18/19/22/23 comes from the response parser: the
+service's response dispatcher switches on the internal opcode (jump table at
+VA `0x4C8DF0`), and case 19 calls `GetNoiseReductionLevel`, case 23
+`GetLatencyLevel`, case 16 `GetSideToneGain`, case 14 `GetBatPercentage`. The
+value ranges are not known; the strings of other device families
+(`NoiseReductionOff/Average/Max`, `BtMinLinkLatency/BtMaxLinkLatency`) suggest
+small enums, so `1` from opcode 19 may mean "average". This is a guess.
+
+**Auto sleep** does not use the opcode table. `CCapricornDatagram::DeviceAutoSleepLevel`
+(`0x4CF820`, slot 3 of the vtable at `0x828DB0`) builds its own 8-byte body and
+sends it through `EncodeDatagram`:
+
+```
+08 00  EF 00  01 00  <level> 00      (u16 group 0x08, u16 cmd 0xEF, u16 1, u16 level)
+```
+
+It returns a u16 status from the response. What `level` means (minutes, an
+index, or on/off) is unknown, and it is not known whether the H3PRO supports
+it. Not tried by eposctl.
 
 Sidetone values: the official UI sent `0xFF` at its slider minimum, `0x00` at
 its maximum and `0x8B` in the middle. eposctl's writes of 0, 255 and 139 were
