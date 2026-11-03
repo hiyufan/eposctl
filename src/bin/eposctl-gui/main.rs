@@ -63,6 +63,7 @@ fn factory_label(s: &Strings, name: &str) -> &'static str {
     match name {
         "music" => s.preset_music,
         "esport" => s.preset_esport,
+        "movie" => s.preset_movie,
         "flat" => s.preset_flat,
         _ => s.preset_custom,
     }
@@ -70,7 +71,7 @@ fn factory_label(s: &Strings, name: &str) -> &'static str {
 
 /// Factory presets in the order the official app shows them.
 fn factory() -> impl Iterator<Item = &'static Preset> {
-    ["music", "esport", "flat"].into_iter().filter_map(presets::find)
+    ["music", "esport", "movie", "flat"].into_iter().filter_map(presets::find)
 }
 
 fn close(a: &[f32], b: &[f32]) -> bool {

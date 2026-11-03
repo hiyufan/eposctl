@@ -17,6 +17,7 @@ pub struct Strings {
 
     pub preset_music: &'static str,
     pub preset_esport: &'static str,
+    pub preset_movie: &'static str,
     pub preset_flat: &'static str,
     pub preset_custom: &'static str,
     pub save_preset: &'static str,
@@ -89,6 +90,7 @@ static ZH: Strings = Strings {
 
     preset_music: "音乐",
     preset_esport: "电竞",
+    preset_movie: "电影",
     preset_flat: "平直",
     preset_custom: "自定义",
     save_preset: "保存为预设",
@@ -161,6 +163,7 @@ static EN: Strings = Strings {
 
     preset_music: "Music",
     preset_esport: "eSport",
+    preset_movie: "Movie",
     preset_flat: "Flat",
     preset_custom: "Custom",
     save_preset: "Save as preset",

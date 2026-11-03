@@ -50,6 +50,13 @@ pub const FACTORY: &[Preset] = &[
         noise_gate: 90.0 / 255.0,
         surround: true,
     },
+    Preset {
+        name: "movie",
+        speaker_eq: [6.0, 4.16, 1.28, 0.28, 0.0, 0.0, 0.66, 4.02, 6.0],
+        reverb: 0.0,
+        noise_gate: 170.0 / 255.0,
+        surround: true,
+    },
 ];
 
 pub fn find(name: &str) -> Option<&'static Preset> {

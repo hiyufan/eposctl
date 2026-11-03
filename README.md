@@ -17,7 +17,7 @@ Early. Tested with the **EPOS H3PRO Hybrid** (USB dongle `1395:0303`).
 |---|---|
 | Speaker 9-band EQ | works |
 | Microphone 9-band EQ | works |
-| Factory presets (flat / music / esport) | works, exact official curves |
+| Factory presets (flat / music / esport / movie) | works, exact official curves |
 | Virtual 3D surround, reverb, noise gate | works |
 | Battery, firmware, serial, product name | works (HID) |
 | Sidetone level | works (HID); see note below |
@@ -63,7 +63,7 @@ adds `eposctl-gui.exe --minimized` to `HKCU\...\Run`.
 ```text
 eposctl list                     # devices exposing an EPOS APO channel
 eposctl status [--raw]           # current DSP settings
-eposctl preset music             # flat | music | esport
+eposctl preset music             # flat | music | esport | movie
 eposctl eq 6 4 1 0 -1 0 1 4 6    # 9 speaker bands in dB (-6..6), low to high
 eposctl mic-eq 0 0 0 0 0 0 0 0 0
 eposctl surround on

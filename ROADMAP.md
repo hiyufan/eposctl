@@ -6,7 +6,7 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
 
 - [x] CI build, tagged releases with prebuilt binaries
 - [x] `eposctl report` and a device-report issue template, to collect data for other models
-- [ ] MOVIE preset curve (**RE**: capture from the official app)
+- [x] MOVIE preset curve
 
 ## 0.2: everyday features
 

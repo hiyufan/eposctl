@@ -88,7 +88,23 @@ the 9-band values the official UI actually wrote:
 | FLAT   | 0 0 0 0 0 0 0 0 0 | 0 | 100/255 | off |
 | MUSIC  | 6 3.97 0.85 -0.43 -1.04 -0.47 0.66 4.02 6 | 0 | 40/255 | off |
 | ESPORT | -6 -3.97 -0.85 0.85 2.03 4.2 6 6 6 | 77/255 | 90/255 | on |
-| MOVIE  | not captured yet | | | |
+| MOVIE  | 6 4.16 1.28 0.28 0 0 0.66 4.02 6 | 0 | 170/255 | on |
+
+The official preset files (`XMLFolder\*PresetEQSettings.xml` in the install
+directory, copies under `%ProgramData%\EPOS\Gaming Suite\CUSTOMPRESET`) agree
+with these captures for reverb (`ReverbKnob`), surround (`Audio3D`) and noise
+gate (`NoiseGate`). Their five EQ sliders (-127..127) map to the nine bands as
+follows (observed):
+
+| Preset | Sliders 1-5 | `micEQ` |
+|---|---|---|
+| FLAT   | 0 0 0 0 0 | 0 |
+| MUSIC  | 127 0 -22 0 127 | 1 |
+| ESPORT | -127 0 43 127 127 | 0 |
+| MOVIE  | 127 11 0 0 127 | 1 |
+
+The files also have `ECOMode` (0 in all four) and a `VoiceEnhancer`/`micEQ`
+flag whose effect is not known.
 
 Selecting ESPORT also wrote a mic EQ curve
 (`6 6 4.02 -0.52 -3.02 -2.31 1.04 -3.02 0`). MUSIC did not, so how presets
@@ -204,5 +220,4 @@ on the device side and is not known.
 - Does the APO create the section itself when the EPOS service is not running?
   (`EAPO.dll` contains "Could not create shared memory", which suggests create-or-open.)
 - Meaning of `0x00`, `0x04`, `0x48`, `0xB4`, and the bytes between `0x9C` and `0x440`.
-- MOVIE preset curve.
 - Whether the event must be signalled for the APO to pick up changes, or if it polls.
