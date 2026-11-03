@@ -31,6 +31,24 @@ pub struct Last {
     pub surround: Option<bool>,
 }
 
+/// A program and the preset to use while it is in the foreground.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AppRule {
+    /// Lower-case executable name, e.g. `valorant-win64-shipping.exe`.
+    pub exe: String,
+    /// A factory preset name (`music`) or `custom:<name>` for a saved preset.
+    pub preset: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AutoPresets {
+    pub enabled: bool,
+    /// Preset for programs without a rule; `None` leaves the sound as it is.
+    pub default: Option<String>,
+    pub rules: Vec<AppRule>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -39,6 +57,7 @@ pub struct Config {
     pub restore_on_start: bool,
     pub battery_alerts: bool,
     pub custom_presets: Vec<CustomPreset>,
+    pub auto: AutoPresets,
     pub last: Last,
 }
 
@@ -50,6 +69,7 @@ impl Default for Config {
             restore_on_start: true,
             battery_alerts: true,
             custom_presets: Vec::new(),
+            auto: AutoPresets::default(),
             last: Last::default(),
         }
     }

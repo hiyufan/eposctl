@@ -4,6 +4,7 @@
 
 mod config;
 mod eq;
+mod foreground;
 mod icons;
 mod notify;
 mod strings;
@@ -20,7 +21,7 @@ use eframe::egui::{self, Align, Color32, CornerRadius, Frame, Layout, Margin, Ri
 use eposctl::apo::{ApoChannel, Settings, layout::BANDS};
 use eposctl::presets::{self, Preset};
 
-use config::{Config, CustomPreset, Last, Sound};
+use config::{AppRule, Config, CustomPreset, Last, Sound};
 use icons::Icon;
 use strings::{Lang, Strings, t};
 use theme::{ACCENT, DANGER, FAINT, PANEL, RAISED, SECONDARY, TEXT, WARN};
@@ -103,6 +104,14 @@ struct App {
     ab_ref: Option<Sound>,
     /// While comparing: the current sound, put back when the comparison ends.
     comparing: Option<Sound>,
+
+    fg: foreground::Shared,
+    /// Foreground program the per-app rules were last evaluated for.
+    auto_app: Option<String>,
+    /// Preset those rules picked (`None`: leave the sound alone).
+    auto_target: Option<String>,
+    /// Program name typed into the "add rule" field.
+    auto_input: String,
 }
 
 fn factory_label(s: &Strings, name: &str) -> &'static str {
@@ -126,6 +135,40 @@ fn close(a: &[f32], b: &[f32]) -> bool {
 
 fn sound_of(s: &Settings) -> Sound {
     Sound { speaker_eq: s.speaker_eq(), reverb: s.reverb(), surround: s.surround() }
+}
+
+/// Normalise what the user typed into a lower-case executable file name.
+fn exe_name(input: &str) -> Option<String> {
+    let name = input.trim().trim_matches('"').rsplit(['\\', '/']).next()?.trim().to_lowercase();
+    if name.is_empty() {
+        return None;
+    }
+    Some(if name.contains('.') { name } else { format!("{name}.exe") })
+}
+
+/// Drop-down of presets. `none` adds a first entry meaning "no preset".
+fn preset_combo(
+    ui: &mut Ui,
+    id: impl egui::AsIdSalt,
+    value: &mut Option<String>,
+    choices: &[(String, String)],
+    none: Option<&str>,
+    missing: &str,
+) -> bool {
+    let before = value.clone();
+    let text = match value.as_deref() {
+        None => none.unwrap_or_default().to_owned(),
+        Some(v) => choices.iter().find(|(k, _)| k == v).map_or_else(|| missing.to_owned(), |(_, l)| l.clone()),
+    };
+    egui::ComboBox::from_id_salt(id).selected_text(text).width(150.0).show_ui(ui, |ui| {
+        if let Some(n) = none {
+            ui.selectable_value(value, None, n);
+        }
+        for (k, l) in choices {
+            ui.selectable_value(value, Some(k.clone()), l);
+        }
+    });
+    *value != before
 }
 
 fn write_sound(s: &mut Settings, sound: &Sound) {
@@ -169,6 +212,10 @@ impl App {
             group_until: None,
             ab_ref: None,
             comparing: None,
+            fg: foreground::spawn(cc.egui_ctx.clone()),
+            auto_app: None,
+            auto_target: None,
+            auto_input: String::new(),
             cfg,
         };
         // Debug builds: `EPOSCTL_PAGE=mic|device|settings` opens on that page (for screenshots).
@@ -366,6 +413,186 @@ impl App {
         }
         self.ab_ref = self.s.as_ref().map(sound_of);
         self.group_until = None;
+    }
+
+    // ---- per-program presets ----
+
+    /// Presets a rule can point at, as (reference, label). Saved presets are
+    /// referenced by name so deleting one does not shift the others.
+    fn preset_choices(&self) -> Vec<(String, String)> {
+        let s = self.s();
+        let mut v: Vec<(String, String)> =
+            factory().map(|p| (p.name.to_owned(), factory_label(s, p.name).to_owned())).collect();
+        for p in &self.cfg.custom_presets {
+            let key = format!("custom:{}", p.name);
+            if !v.iter().any(|(k, _)| *k == key) {
+                v.push((key, p.name.clone()));
+            }
+        }
+        v
+    }
+
+    fn apply_preset_ref(&mut self, r: &str) {
+        match r.strip_prefix("custom:") {
+            Some(name) => {
+                if let Some(i) = self.cfg.custom_presets.iter().position(|p| p.name == name) {
+                    self.apply_preset_id(&format!("custom{i}"));
+                }
+            }
+            None => self.apply_preset_id(r),
+        }
+    }
+
+    /// Apply the preset for the program in front, once it has stayed there a moment.
+    /// Only a change of *target preset* applies anything, so hand-made changes
+    /// survive switching between programs that share a preset.
+    fn auto_switch(&mut self, ctx: &egui::Context) {
+        if !self.cfg.auto.enabled || self.apo.is_none() {
+            return;
+        }
+        let Some((exe, since)) = self.fg.lock().unwrap().current.clone() else { return };
+        if self.auto_app.as_deref() == Some(exe.as_str()) {
+            return;
+        }
+        let wait = foreground::SETTLE.saturating_sub(since.elapsed());
+        if !wait.is_zero() {
+            ctx.request_repaint_after(wait);
+            return;
+        }
+        let auto = &self.cfg.auto;
+        let target = auto.rules.iter().find(|r| r.exe == exe).map(|r| r.preset.clone()).or_else(|| auto.default.clone());
+        self.auto_app = Some(exe);
+        if target != self.auto_target {
+            self.auto_target = target.clone();
+            if let Some(r) = target {
+                self.apply_preset_ref(&r);
+            }
+        }
+    }
+
+    fn auto_panel(&mut self, ui: &mut Ui) {
+        let s = self.s();
+        let choices = self.preset_choices();
+        widgets::panel().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            let mut on = self.cfg.auto.enabled;
+            if Self::setting_row(ui, s.auto_title, s.auto_desc, &mut on, true) {
+                self.cfg.auto.enabled = on;
+                // Take effect from the next switch rather than changing the sound right now.
+                self.auto_app = self.fg.lock().unwrap().current.as_ref().map(|(e, _)| e.clone());
+                self.auto_target = None;
+                self.mark_dirty();
+            }
+            if !self.cfg.auto.enabled {
+                return;
+            }
+            ui.add_space(8.0);
+            widgets::divider(ui);
+            ui.add_space(4.0);
+
+            let row = |ui: &mut Ui, label: &str, right: &mut dyn FnMut(&mut Ui)| {
+                ui.horizontal(|ui| {
+                    ui.set_min_height(36.0);
+                    ui.label(RichText::new(label).color(TEXT));
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| right(ui));
+                });
+            };
+
+            let mut default = self.cfg.auto.default.clone();
+            let mut default_changed = false;
+            row(ui, s.auto_other, &mut |ui| {
+                default_changed =
+                    preset_combo(ui, "auto-default", &mut default, &choices, Some(s.auto_keep), s.missing_preset);
+            });
+            if default_changed {
+                self.cfg.auto.default = default;
+                self.mark_dirty();
+            }
+
+            let rules = self.cfg.auto.rules.clone();
+            let (mut remove, mut set) = (None, None);
+            for (i, rule) in rules.iter().enumerate() {
+                row(ui, &rule.exe, &mut |ui| {
+                    if widgets::ghost(ui, s.delete).clicked() {
+                        remove = Some(i);
+                    }
+                    let mut v = Some(rule.preset.clone());
+                    if preset_combo(ui, ("auto-rule", i), &mut v, &choices, None, s.missing_preset)
+                        && let Some(v) = v
+                    {
+                        set = Some((i, v));
+                    }
+                });
+            }
+            if rules.is_empty() {
+                ui.add_space(4.0);
+                widgets::desc(ui, s.auto_empty);
+            }
+
+            ui.add_space(8.0);
+            widgets::divider(ui);
+            ui.add_space(10.0);
+            let mut add: Option<String> = None;
+            let recent: Vec<String> = self
+                .fg
+                .lock()
+                .unwrap()
+                .recent
+                .iter()
+                .filter(|e| !rules.iter().any(|r| r.exe == **e))
+                .cloned()
+                .collect();
+            if !recent.is_empty() {
+                widgets::desc(ui, s.auto_recent);
+                ui.add_space(6.0);
+                ui.horizontal_wrapped(|ui| {
+                    for e in &recent {
+                        if widgets::ghost(ui, &format!("+  {e}")).clicked() {
+                            add = Some(e.clone());
+                        }
+                    }
+                });
+                ui.add_space(8.0);
+            }
+            ui.horizontal(|ui| {
+                let te = ui.add(
+                    egui::TextEdit::singleline(&mut self.auto_input)
+                        .hint_text(s.auto_exe_hint)
+                        .desired_width(240.0)
+                        .margin(Margin::symmetric(10, 7)),
+                );
+                let enter = te.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if (widgets::primary(ui, s.add).clicked() || enter)
+                    && let Some(exe) = exe_name(&self.auto_input)
+                {
+                    add = Some(exe);
+                    self.auto_input.clear();
+                }
+            });
+
+            let rules = &mut self.cfg.auto.rules;
+            let mut dirty = false;
+            if let Some((i, v)) = set {
+                rules[i].preset = v;
+                dirty = true;
+            }
+            if let Some(i) = remove {
+                rules.remove(i);
+                dirty = true;
+            }
+            if let Some(exe) = add
+                && !rules.iter().any(|r| r.exe == exe)
+            {
+                let preset = choices.first().map(|c| c.0.clone()).unwrap_or_default();
+                rules.push(AppRule { exe, preset });
+                dirty = true;
+            }
+            if dirty {
+                // Re-evaluate on the next switch with the new rules.
+                self.auto_target = None;
+                self.mark_dirty();
+            }
+        });
     }
 
     // ---- chrome ----
@@ -802,6 +1029,8 @@ impl App {
             }
         });
         ui.add_space(12.0);
+        self.auto_panel(ui);
+        ui.add_space(12.0);
         widgets::panel().show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
@@ -889,6 +1118,7 @@ impl eframe::App for App {
 
         self.ensure_apo();
         self.sync(ctx);
+        self.auto_switch(ctx);
         self.update_tray();
 
         if self.cfg_dirty_at.is_some_and(|t| t.elapsed() > Duration::from_millis(800)) {
@@ -1014,4 +1244,17 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native("eposctl", options, Box::new(move |cc| Ok(Box::new(App::new(cc, show_event)))))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::exe_name;
+
+    #[test]
+    fn exe_names_are_normalised() {
+        assert_eq!(exe_name(" Valorant ").as_deref(), Some("valorant.exe"));
+        assert_eq!(exe_name(r#""C:\Riot Games\VALORANT\Game.EXE""#).as_deref(), Some("game.exe"));
+        assert_eq!(exe_name("D:/Games/cs2.exe").as_deref(), Some("cs2.exe"));
+        assert_eq!(exe_name("   "), None);
+    }
 }

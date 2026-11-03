@@ -12,13 +12,13 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
 
 - [ ] Live microphone level meter on the Mic page, with the noise-gate threshold drawn on it
       (**RE**: map the 15 APO meters; check whether the mic monitor flags must be set)
-- [ ] Low-battery notification at 20 / 10 / 5 %, once per level, reset when charged
-- [ ] Surround toggle in the tray menu
-- [ ] EQ undo and A/B compare
+- [x] Low-battery notification at 20 / 10 / 5 %, once per level, reset when charged
+- [x] Surround toggle in the tray menu
+- [x] EQ undo and A/B compare
 
 ## 0.3: automation
 
-- [ ] Per-application presets: switch preset when a given program comes to the foreground,
+- [x] Per-application presets: switch preset when a given program comes to the foreground,
       with a default preset. Manual changes are kept until the foreground program changes.
 - [ ] Global hotkeys (next/previous preset, surround on/off)
 - [ ] Export and import presets as JSON
