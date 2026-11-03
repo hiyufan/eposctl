@@ -37,6 +37,7 @@ pub struct Config {
     pub lang: Lang,
     pub close_to_tray: bool,
     pub restore_on_start: bool,
+    pub battery_alerts: bool,
     pub custom_presets: Vec<CustomPreset>,
     pub last: Last,
 }
@@ -47,6 +48,7 @@ impl Default for Config {
             lang: Lang::Zh,
             close_to_tray: true,
             restore_on_start: true,
+            battery_alerts: true,
             custom_presets: Vec::new(),
             last: Last::default(),
         }

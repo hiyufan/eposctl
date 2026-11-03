@@ -5,6 +5,7 @@
 mod config;
 mod eq;
 mod icons;
+mod notify;
 mod strings;
 mod theme;
 mod tray;
@@ -24,6 +25,40 @@ use icons::Icon;
 use strings::{Lang, Strings, t};
 use theme::{ACCENT, DANGER, FAINT, PANEL, RAISED, SECONDARY, TEXT, WARN};
 use worker::{Cmd, DevState};
+
+/// Everything an undo step restores.
+#[derive(Clone, Debug, PartialEq)]
+struct Snapshot {
+    speaker_eq: [f32; BANDS],
+    mic_eq: [f32; BANDS],
+    reverb: f32,
+    noise_gate: f32,
+    surround: bool,
+}
+
+impl Snapshot {
+    fn of(s: &Settings) -> Self {
+        Self {
+            speaker_eq: s.speaker_eq(),
+            mic_eq: s.mic_eq(),
+            reverb: s.reverb(),
+            noise_gate: s.noise_gate(),
+            surround: s.surround(),
+        }
+    }
+
+    fn write(&self, s: &mut Settings) {
+        s.set_speaker_eq(&self.speaker_eq);
+        s.set_mic_eq(&self.mic_eq);
+        s.set_reverb(self.reverb);
+        s.set_noise_gate(self.noise_gate);
+        s.set_surround(self.surround);
+    }
+}
+
+/// Edits closer together than this (or within one drag) form one undo step.
+const UNDO_GROUP: Duration = Duration::from_millis(600);
+const UNDO_DEPTH: usize = 50;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
@@ -57,6 +92,17 @@ struct App {
     /// Frames left during which the window is kept hidden (`--minimized`).
     /// eframe shows the window after its first paint, so it is hidden again here.
     hide_frames: u8,
+    /// Lowest battery threshold already notified; cleared once the level recovers.
+    battery_warned: Option<u8>,
+
+    undo: Vec<Snapshot>,
+    redo: Vec<Snapshot>,
+    /// The current undo step stays open until this instant.
+    group_until: Option<Instant>,
+    /// A/B reference: the sound when a preset was last picked or the driver was found.
+    ab_ref: Option<Sound>,
+    /// While comparing: the current sound, put back when the comparison ends.
+    comparing: Option<Sound>,
 }
 
 fn factory_label(s: &Strings, name: &str) -> &'static str {
@@ -80,6 +126,12 @@ fn close(a: &[f32], b: &[f32]) -> bool {
 
 fn sound_of(s: &Settings) -> Sound {
     Sound { speaker_eq: s.speaker_eq(), reverb: s.reverb(), surround: s.surround() }
+}
+
+fn write_sound(s: &mut Settings, sound: &Sound) {
+    s.set_speaker_eq(&sound.speaker_eq);
+    s.set_surround(sound.surround);
+    s.set_reverb(sound.reverb);
 }
 
 fn matches(cur: &Sound, eq: &[f32; BANDS], reverb: f32, surround: bool) -> bool {
@@ -111,6 +163,12 @@ impl App {
             cfg_dirty_at: None,
             quitting: false,
             hide_frames: if std::env::args().any(|a| a == "--minimized") { 3 } else { 0 },
+            battery_warned: None,
+            undo: Vec::new(),
+            redo: Vec::new(),
+            group_until: None,
+            ab_ref: None,
+            comparing: None,
             cfg,
         };
         // Debug builds: `EPOSCTL_PAGE=mic|device|settings` opens on that page (for screenshots).
@@ -122,6 +180,15 @@ impl App {
                 "settings" => Page::Settings,
                 _ => Page::Sound,
             };
+        }
+        // Debug builds: `EPOSCTL_TEST_TOAST=1` shows a sample low-battery notification.
+        #[cfg(debug_assertions)]
+        if std::env::var_os("EPOSCTL_TEST_TOAST").is_some() {
+            let s = app.s();
+            let body = s.low_battery_body.replace("{name}", "EPOS H3PRO").replace("{pct}", "20");
+            if let Err(e) = notify::toast(s.low_battery_title, &body) {
+                let _ = std::fs::write(std::env::temp_dir().join("eposctl-toast-error.txt"), e.to_string());
+            }
         }
         app.tray = tray::Tray::new(&cc.egui_ctx, flags, app.s(), &app.tray_presets());
         app
@@ -171,6 +238,8 @@ impl App {
             });
         }
         self.s = ch.read().ok();
+        self.ab_ref = self.s.as_ref().map(sound_of);
+        self.comparing = None;
         self.apo = Some(ch);
     }
 
@@ -193,35 +262,110 @@ impl App {
         self.s = None;
     }
 
+    /// A user edit: ends any A/B comparison, records an undo step, remembers the result.
     fn apply(&mut self, f: impl FnOnce(&mut Settings)) {
-        let Some(ch) = &self.apo else { return };
-        match ch.modify(f) {
-            Ok(s) => {
-                self.cfg.last = Last {
-                    speaker_eq: Some(s.speaker_eq()),
-                    mic_eq: Some(s.mic_eq()),
-                    reverb: Some(s.reverb()),
-                    noise_gate: Some(s.noise_gate()),
-                    surround: Some(s.surround()),
-                };
-                self.s = Some(s);
-                self.mark_dirty();
+        self.stop_compare();
+        let before = self.s.as_ref().map(Snapshot::of);
+        if self.write(f) {
+            if let (Some(b), Some(now)) = (before, self.s.as_ref().map(Snapshot::of))
+                && b != now
+            {
+                self.record(b);
             }
-            Err(_) => self.drop_apo(),
+            self.remember();
         }
     }
 
+    /// Write to the driver without touching undo history or the saved settings.
+    fn write(&mut self, f: impl FnOnce(&mut Settings)) -> bool {
+        let Some(ch) = &self.apo else { return false };
+        match ch.modify(f) {
+            Ok(s) => {
+                self.s = Some(s);
+                true
+            }
+            Err(_) => {
+                self.drop_apo();
+                false
+            }
+        }
+    }
+
+    fn record(&mut self, before: Snapshot) {
+        let now = Instant::now();
+        if !self.group_until.is_some_and(|t| now < t) {
+            self.undo.push(before);
+            if self.undo.len() > UNDO_DEPTH {
+                self.undo.remove(0);
+            }
+        }
+        self.group_until = Some(now + UNDO_GROUP);
+        self.redo.clear();
+    }
+
+    fn undo(&mut self) {
+        self.stop_compare();
+        let Some(cur) = self.s.as_ref().map(Snapshot::of) else { return };
+        let Some(prev) = self.undo.pop() else { return };
+        if self.write(|s| prev.write(s)) {
+            self.redo.push(cur);
+            self.group_until = None;
+            self.remember();
+        }
+    }
+
+    fn redo(&mut self) {
+        self.stop_compare();
+        let Some(cur) = self.s.as_ref().map(Snapshot::of) else { return };
+        let Some(next) = self.redo.pop() else { return };
+        if self.write(|s| next.write(s)) {
+            self.undo.push(cur);
+            self.group_until = None;
+            self.remember();
+        }
+    }
+
+    fn start_compare(&mut self) {
+        let Some(reference) = self.ab_ref.clone() else { return };
+        let Some(cur) = self.s.as_ref().map(sound_of) else { return };
+        if self.write(|s| write_sound(s, &reference)) {
+            self.comparing = Some(cur);
+        }
+    }
+
+    fn stop_compare(&mut self) {
+        if let Some(cur) = self.comparing.take() {
+            self.write(|s| write_sound(s, &cur));
+        }
+    }
+
+    /// Save the current driver state as the "last" settings restored on start.
+    fn remember(&mut self) {
+        let Some(s) = &self.s else { return };
+        self.cfg.last = Last {
+            speaker_eq: Some(s.speaker_eq()),
+            mic_eq: Some(s.mic_eq()),
+            reverb: Some(s.reverb()),
+            noise_gate: Some(s.noise_gate()),
+            surround: Some(s.surround()),
+        };
+        self.mark_dirty();
+    }
+
     fn apply_preset_id(&mut self, id: &str) {
+        // Picking a preset is its own undo step and a fresh start for A/B.
+        self.group_until = None;
         if let Some(p) = presets::find(id) {
             self.apply(|s| p.apply(s));
         } else if let Some(c) = id.strip_prefix("custom").and_then(|i| i.parse::<usize>().ok())
-            && let Some(p) = self.cfg.custom_presets.get(c).cloned() {
-                self.apply(|s| {
-                    s.set_speaker_eq(&p.sound.speaker_eq);
-                    s.set_surround(p.sound.surround);
-                    s.set_reverb(p.sound.reverb);
-                });
-            }
+            && let Some(p) = self.cfg.custom_presets.get(c).cloned()
+        {
+            self.apply(|s| write_sound(s, &p.sound));
+        } else {
+            return;
+        }
+        self.ab_ref = self.s.as_ref().map(sound_of);
+        self.group_until = None;
     }
 
     // ---- chrome ----
@@ -246,6 +390,7 @@ impl App {
             if resp.clicked() {
                 self.page = page;
                 self.naming = None;
+                self.stop_compare();
             }
             let sel = self.page == page;
             let color = if sel {
@@ -413,23 +558,49 @@ impl App {
             ui.horizontal(|ui| {
                 widgets::heading(ui, s.equalizer);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if widgets::ghost(ui, s.reset).clicked() {
+                    let comparing = self.comparing.is_some();
+                    if widgets::ghost_toggle(ui, s.reset, !comparing, false).clicked() {
                         self.apply(|st| st.set_speaker_eq(&[0.0; BANDS]));
+                    }
+                    let can_undo = !self.undo.is_empty() && !comparing;
+                    if widgets::ghost_toggle(ui, s.undo, can_undo, false).on_hover_text(s.undo_tip).clicked() {
+                        self.undo();
+                    }
+                    let differs = self
+                        .ab_ref
+                        .as_ref()
+                        .is_some_and(|r| !matches(&sound, &r.speaker_eq, r.reverb, r.surround));
+                    let label = if comparing { s.comparing } else { s.compare };
+                    let r = widgets::ghost_toggle(ui, label, comparing || differs, comparing)
+                        .on_hover_text(s.compare_tip);
+                    if r.clicked() {
+                        if comparing {
+                            self.stop_compare();
+                        } else {
+                            self.start_compare();
+                        }
                     }
                 });
             });
             ui.add_space(6.0);
-            let mut g = self.s.as_ref().map(|x| x.speaker_eq()).unwrap_or_default();
-            if eq::editor(ui, "speaker", &mut g, s.low, s.high, 230.0) {
-                self.apply(|st| st.set_speaker_eq(&g));
-            }
+            let editable = self.comparing.is_none();
+            ui.add_enabled_ui(editable, |ui| {
+                let mut g = self.s.as_ref().map(|x| x.speaker_eq()).unwrap_or_default();
+                if eq::editor(ui, "speaker", &mut g, s.low, s.high, 230.0) && editable {
+                    self.apply(|st| st.set_speaker_eq(&g));
+                }
+            });
             widgets::desc(ui, s.eq_hint);
         });
         ui.add_space(12.0);
 
         // Surround, with reverb beneath it because it only works with surround on.
+        let editable = self.comparing.is_none();
         widgets::panel().show(ui, |ui| {
             ui.set_width(ui.available_width());
+            if !editable {
+                ui.disable();
+            }
             let mut on = sound.surround;
             if Self::setting_row(ui, s.surround, s.surround_desc, &mut on, true) {
                 self.apply(|st| st.set_surround(on));
@@ -449,8 +620,9 @@ impl App {
 
     fn after_presets_changed(&mut self) {
         self.mark_dirty();
-        if let Some(t) = &self.tray {
-            t.set_menu(self.s(), &self.tray_presets());
+        let (s, presets) = (self.s(), self.tray_presets());
+        if let Some(t) = &mut self.tray {
+            t.set_menu(s, &presets);
         }
     }
 
@@ -620,6 +792,14 @@ impl App {
                 self.cfg.restore_on_start = v;
                 self.mark_dirty();
             }
+            ui.add_space(4.0);
+            widgets::divider(ui);
+            ui.add_space(4.0);
+            let mut v = self.cfg.battery_alerts;
+            if Self::setting_row(ui, s.battery_alerts, s.battery_alerts_desc, &mut v, false) {
+                self.cfg.battery_alerts = v;
+                self.mark_dirty();
+            }
         });
         ui.add_space(12.0);
         widgets::panel().show(ui, |ui| {
@@ -633,6 +813,25 @@ impl App {
         });
     }
 
+    /// Notify once per threshold as the battery drains; re-arm after charging.
+    fn check_battery(&mut self, name: &str, percent: u8) {
+        const THRESHOLDS: [u8; 3] = [5, 10, 20];
+        if percent > THRESHOLDS[2] + 5 {
+            self.battery_warned = None;
+            return;
+        }
+        let Some(level) = THRESHOLDS.into_iter().find(|&t| percent <= t) else { return };
+        if self.battery_warned.is_some_and(|w| level >= w) {
+            return;
+        }
+        self.battery_warned = Some(level);
+        if self.cfg.battery_alerts {
+            let s = self.s();
+            let body = s.low_battery_body.replace("{name}", name).replace("{pct}", &percent.to_string());
+            let _ = notify::toast(s.low_battery_title, &body);
+        }
+    }
+
     fn update_tray(&mut self) {
         let s = self.s();
         let d = self.dev.lock().unwrap().clone();
@@ -643,8 +842,14 @@ impl App {
             (true, None) => name,
             _ => format!("{name}\n{}", s.tray_no_headset),
         };
+        if linked && let Some(b) = d.battery {
+            let name = d.product.clone().unwrap_or_else(|| s.headset.to_owned());
+            self.check_battery(&name, b);
+        }
+        let surround = self.s.as_ref().map(|s| s.surround());
         if let Some(t) = &mut self.tray {
             t.update(if linked { d.battery } else { None }, linked, tip);
+            t.set_surround(surround);
         }
     }
 }
@@ -654,6 +859,7 @@ impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if self.flags.quit_requested() && !self.quitting {
             self.quitting = true;
+            self.stop_compare();
             self.cfg.save();
             self.tray = None; // remove the icon now rather than leaving a ghost
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -669,6 +875,12 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+        if self.flags.take_toggle_surround() {
+            self.ensure_apo();
+            if let Some(on) = self.s.as_ref().map(|s| !s.surround()) {
+                self.apply(|s| s.set_surround(on));
+            }
         }
         if let Some(id) = self.flags.take_preset() {
             self.ensure_apo();
@@ -688,6 +900,7 @@ impl eframe::App for App {
             if self.cfg.close_to_tray && self.tray.is_some() {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                self.stop_compare();
             } else {
                 self.cfg.save();
             }
@@ -698,6 +911,26 @@ impl eframe::App for App {
 
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let d = self.dev.lock().unwrap().clone();
+
+        // A drag (EQ point, slider) is one undo step however long it lasts.
+        if ui.ctx().dragged_id().is_some() && self.group_until.is_some() {
+            self.group_until = Some(Instant::now() + UNDO_GROUP);
+        }
+        if !ui.ctx().egui_wants_keyboard_input() {
+            use egui::{Key, Modifiers};
+            let (redo_shift, undo, redo) = ui.input_mut(|i| {
+                (
+                    i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z),
+                    i.consume_key(Modifiers::COMMAND, Key::Z),
+                    i.consume_key(Modifiers::COMMAND, Key::Y),
+                )
+            });
+            if undo {
+                self.undo();
+            } else if redo || redo_shift {
+                self.redo();
+            }
+        }
 
         egui::Panel::left("nav")
             .exact_size(88.0)
@@ -724,6 +957,7 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.stop_compare();
         self.cfg.save();
     }
 

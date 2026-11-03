@@ -37,15 +37,36 @@ pub fn chip(ui: &mut Ui, text: &str, selected: bool) -> Response {
 
 /// Outlined pill for a secondary action ("Save as preset", "Reset").
 pub fn ghost(ui: &mut Ui, text: &str) -> Response {
+    ghost_toggle(ui, text, true, false)
+}
+
+/// `ghost` with an enabled state and an "on" state (accent outline).
+pub fn ghost_toggle(ui: &mut Ui, text: &str, enabled: bool, on: bool) -> Response {
     let galley = ui.painter().layout_no_wrap(text.to_owned(), theme::font(13.0), TEXT);
     let size = vec2(galley.size().x + 24.0, 30.0);
-    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-    let fg = if resp.hovered() { TEXT } else { SECONDARY };
-    let stroke = if resp.hovered() { SECONDARY } else { HAIRLINE };
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, resp) = ui.allocate_exact_size(size, sense);
+    let hot = enabled && resp.hovered();
+    let fg = if !enabled {
+        FAINT
+    } else if on {
+        ACCENT
+    } else if hot {
+        TEXT
+    } else {
+        SECONDARY
+    };
+    let stroke = if on {
+        ACCENT
+    } else if hot {
+        SECONDARY
+    } else {
+        HAIRLINE
+    };
     ui.painter().rect(rect, CornerRadius::same(15), Color32::TRANSPARENT, Stroke::new(1.0, stroke), StrokeKind::Inside);
     ui.painter().galley(rect.center() - galley.size() / 2.0, galley, fg);
     focus_ring(ui, &resp, rect, 15);
-    if resp.hovered() {
+    if hot {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     resp
