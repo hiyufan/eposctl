@@ -31,6 +31,12 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
 - [x] Game/voice balance over the per-program volumes in the Windows mixer (software ChatMix),
       with hotkeys
 
+## 0.5: games
+
+- [x] Footstep presets for VALORANT, Delta Force, Call of Duty and PUBG
+      (from community sources, tuned for the H3 series; not yet tried in game)
+- [x] Import of Equalizer APO / AutoEQ files
+
 ## Research track (runs alongside the above)
 
 - [ ] `eposctl raw`: send read-only HID requests to decode the unknown getters

@@ -143,13 +143,21 @@ fn factory_label(s: &Strings, name: &str) -> &'static str {
         "esport" => s.preset_esport,
         "movie" => s.preset_movie,
         "flat" => s.preset_flat,
+        "valorant" => s.preset_valorant,
+        "delta-force" => s.preset_delta_force,
+        "cod" => s.preset_cod,
+        "pubg" => s.preset_pubg,
         _ => s.preset_custom,
     }
 }
 
-/// Factory presets in the order the official app shows them.
+/// Factory presets in the order the official app shows them, then the game presets.
 fn factory() -> impl Iterator<Item = &'static Preset> {
-    ["music", "esport", "movie", "flat"].into_iter().filter_map(presets::find)
+    ["music", "esport", "movie", "flat"].into_iter().filter_map(presets::find).chain(presets::GAMES)
+}
+
+fn is_game(p: &Preset) -> bool {
+    presets::GAMES.iter().any(|g| g.name == p.name)
 }
 
 fn close(a: &[f32], b: &[f32]) -> bool {
@@ -1045,9 +1053,18 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
             let mut chosen = None;
+            let mut first_game = true;
             for p in factory() {
+                let game = is_game(p);
+                if game && std::mem::take(&mut first_game) {
+                    ui.add_space(6.0);
+                }
                 let on = matches(&sound, &p.speaker_eq, p.reverb, p.surround);
-                if widgets::chip(ui, factory_label(s, p.name), on).clicked() {
+                let mut r = widgets::chip(ui, factory_label(s, p.name), on);
+                if game {
+                    r = r.on_hover_text(s.preset_game_tip);
+                }
+                if r.clicked() {
                     chosen = Some(p.name.to_owned());
                 }
             }

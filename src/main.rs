@@ -25,7 +25,7 @@ enum Cmd {
         #[arg(long)]
         raw: bool,
     },
-    /// Apply a factory preset (speaker side)
+    /// Apply a factory or game preset (speaker side)
     Preset {
         #[arg(value_parser = preset_names())]
         name: String,
@@ -135,7 +135,7 @@ enum OnOff {
 }
 
 fn preset_names() -> clap::builder::PossibleValuesParser {
-    presets::FACTORY.iter().map(|p| p.name).collect::<Vec<_>>().into()
+    presets::all().map(|p| p.name).collect::<Vec<_>>().into()
 }
 
 fn bands(v: &[f32]) -> [f32; BANDS] {

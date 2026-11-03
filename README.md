@@ -83,6 +83,10 @@ last, measured from how fast it drains while the headset is on.
 **Preset files**: export saves your custom presets as JSON; import adds the
 presets from such a file and skips ones you already have.
 
+**Game presets**: VALORANT, Delta Force, Call of Duty and PUBG presets for
+hearing footsteps, tuned for the H3 series. See [docs/game-presets.md](docs/game-presets.md)
+for how they were made and the sources. They pair well with per-program presets.
+
 **EQ files**: "Import" next to either EQ loads an Equalizer APO or AutoEQ file
 (`ParametricEQ.txt`, `GraphicEQ.txt` or the CSV), so a headphone correction
 from [AutoEQ](https://github.com/jaakkopasanen/AutoEq) can be used directly.
@@ -103,6 +107,7 @@ adds `eposctl-gui.exe --minimized` to `HKCU\...\Run`.
 eposctl list                     # devices exposing an EPOS APO channel
 eposctl status [--raw]           # current DSP settings
 eposctl preset music             # flat | music | esport | movie
+eposctl preset valorant          # game presets: valorant | delta-force | cod | pubg
 eposctl eq 6 4 1 0 -1 0 1 4 6    # 9 speaker bands in dB (-6..6), low to high
 eposctl mic-eq 0 0 0 0 0 0 0 0 0
 eposctl eq-import ParametricEQ.txt [--mic] [--dry-run]   # Equalizer APO / AutoEQ file
