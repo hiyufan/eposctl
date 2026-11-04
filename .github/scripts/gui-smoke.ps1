@@ -27,9 +27,16 @@ $archive = Get-ChildItem $mesa -Filter *.7z | Select-Object -First 1
 & 7z x $archive.FullName "-o$mesa" -y | Out-Null
 if ($LASTEXITCODE) { throw "could not extract $($archive.Name)" }
 # Only the WGL driver: an EGL library next to the exe could be picked up instead.
+# The archive layout changes between releases, so look for the x64 build.
+$gl = Get-ChildItem $mesa -Recurse -Filter opengl32.dll | Where-Object { $_.DirectoryName -match 'x64' } |
+    Select-Object -First 1
+if (-not $gl) {
+    Get-ChildItem $mesa -Recurse -Filter *.dll | ForEach-Object { Write-Host $_.FullName }
+    throw "no x64 opengl32.dll in $($archive.Name)"
+}
 foreach ($dll in "opengl32.dll", "libgallium_wgl.dll", "libglapi.dll") {
-    $src = Join-Path $mesa "x64\$dll"
-    if (Test-Path $src) { Copy-Item $src $exeDir -Force; Write-Host "using $dll" }
+    $src = Join-Path $gl.DirectoryName $dll
+    if (Test-Path $src) { Copy-Item $src $exeDir -Force; Write-Host "using $src" }
 }
 $env:GALLIUM_DRIVER = "llvmpipe"
 
@@ -41,7 +48,9 @@ foreach ($page in "sound", "mic", "device", "settings") {
     $env:EPOSCTL_PAGE = $page
     $env:EPOSCTL_SHOT = $shot
     $env:EPOSCTL_SHOT_DELAY = "5"
-    $p = Start-Process -FilePath $Exe -PassThru
+    # A GUI-subsystem exe has no console; redirect so its error message is kept.
+    $log = Join-Path (Resolve-Path $OutDir) "$page.log"
+    $p = Start-Process -FilePath $Exe -PassThru -RedirectStandardError $log -RedirectStandardOutput "$log.out"
     $null = $p.Handle # keeps the exit code readable after the process ends
     if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
         Stop-Process -Id $p.Id -Force
@@ -49,7 +58,7 @@ foreach ($page in "sound", "mic", "device", "settings") {
         continue
     }
     if ($p.ExitCode -ne 0) {
-        $failed += "${page}: exited with code $($p.ExitCode)"
+        $failed += "${page}: exited with code $($p.ExitCode): $((Get-Content $log -Raw) -replace '\s+', ' ')"
     } elseif (-not (Test-Path $shot) -or (Get-Item $shot).Length -lt 1000) {
         $failed += "${page}: screenshot missing or empty"
     } else {
