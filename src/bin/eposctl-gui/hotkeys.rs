@@ -201,7 +201,8 @@ fn register(sh: &Shared) {
         let id = i as i32 + 1;
         unsafe { UnregisterHotKey(std::ptr::null_mut(), id) };
         if let Some(c) = combo {
-            let ok = vk(c.key).is_some_and(|k| unsafe { RegisterHotKey(std::ptr::null_mut(), id, c.modifiers(), k) } != 0);
+            let ok =
+                vk(c.key).is_some_and(|k| unsafe { RegisterHotKey(std::ptr::null_mut(), id, c.modifiers(), k) } != 0);
             failed[i] = !ok;
         }
     }

@@ -42,10 +42,7 @@ pub fn spawn(wake: impl Fn() + Send + 'static) -> (Shared, Sender<Cmd>) {
     let state: Shared = Default::default();
     let (tx, rx) = channel();
     let st = state.clone();
-    std::thread::Builder::new()
-        .name("eposctl-hid".into())
-        .spawn(move || run(st, rx, wake))
-        .expect("spawn HID thread");
+    std::thread::Builder::new().name("eposctl-hid".into()).spawn(move || run(st, rx, wake)).expect("spawn HID thread");
     (state, tx)
 }
 
@@ -128,9 +125,10 @@ fn session(h: &Headset, state: &Shared, rx: &Receiver<Cmd>, wake: &impl Fn()) ->
             }
         }
         if let Some(v) = sidetone
-            && let Ok(0) = h.set_sidetone(v) {
-                update(state, wake, |s| s.sidetone = Some(v));
-            }
+            && let Ok(0) = h.set_sidetone(v)
+        {
+            update(state, wake, |s| s.sidetone = Some(v));
+        }
         if let Some(v) = noise_reduction
             && let Ok(0) = h.set_noise_reduction(v)
         {

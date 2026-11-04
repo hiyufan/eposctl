@@ -6,20 +6,17 @@ use std::ptr;
 
 use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
     DIGCF_DEVICEINTERFACE, DIGCF_PRESENT, SP_DEVICE_INTERFACE_DATA, SP_DEVICE_INTERFACE_DETAIL_DATA_W,
-    SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInterfaces, SetupDiGetClassDevsW,
-    SetupDiGetDeviceInterfaceDetailW,
+    SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInterfaces, SetupDiGetClassDevsW, SetupDiGetDeviceInterfaceDetailW,
 };
 use windows_sys::Win32::Devices::HumanInterfaceDevice::{
-    HIDD_ATTRIBUTES, HIDP_CAPS, HidD_FreePreparsedData, HidD_GetAttributes, HidD_GetHidGuid,
-    HidD_GetPreparsedData, HidD_GetProductString, HidD_SetNumInputBuffers, HidP_GetCaps,
+    HIDD_ATTRIBUTES, HIDP_CAPS, HidD_FreePreparsedData, HidD_GetAttributes, HidD_GetHidGuid, HidD_GetPreparsedData,
+    HidD_GetProductString, HidD_SetNumInputBuffers, HidP_GetCaps,
 };
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_IO_PENDING, GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
-    WAIT_OBJECT_0,
+    CloseHandle, ERROR_IO_PENDING, GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_FLAG_OVERLAPPED, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, ReadFile,
-    WriteFile,
+    CreateFileW, FILE_FLAG_OVERLAPPED, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, ReadFile, WriteFile,
 };
 use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
@@ -146,10 +143,7 @@ pub fn enumerate() -> Vec<HidInfo> {
 
 /// Find EPOS vendor command collections (usage page 0xFFFF).
 pub fn find_vendor_collections() -> Vec<HidInfo> {
-    enumerate()
-        .into_iter()
-        .filter(|d| d.vid == EPOS_VID && d.usage_page == VENDOR_USAGE_PAGE)
-        .collect()
+    enumerate().into_iter().filter(|d| d.vid == EPOS_VID && d.usage_page == VENDOR_USAGE_PAGE).collect()
 }
 
 pub struct HidDevice {

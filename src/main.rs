@@ -146,7 +146,6 @@ const FORBIDDEN: &[(u16, u16)] = &[(0x01, 0x06)];
 /// `--write` like setters do.
 const ACTIONS: &[(u16, u16)] = &[(0x01, 0x0A), (0x01, 0x0D), (0x06, 0x09), (0x06, 0x13), (0x06, 0x1C), (0x08, 0xF0)];
 
-
 fn parse_hex(s: &str) -> Result<u16, String> {
     let t = s.trim_start_matches("0x").trim_start_matches("0X");
     u16::from_str_radix(t, 16).map_err(|e| format!("{s}: {e}"))
@@ -167,7 +166,9 @@ fn raw(req: Option<(u16, u16)>, values: Vec<u16>, write: bool, listen: u64) -> s
             return refuse("refusing to send this request: it puts the headset into firmware update mode");
         }
         if ACTIONS.contains(&r) && !write {
-            return refuse("this request may perform an action (firmware update or pairing related); add --write to send it");
+            return refuse(
+                "this request may perform an action (firmware update or pairing related); add --write to send it",
+            );
         }
     }
     if !values.is_empty() && !write {
@@ -269,32 +270,17 @@ fn print_status(dev: DeviceId, s: &Settings, raw: bool) {
         fmt_bands(&s.speaker_eq()),
         if s.speaker_eq_enabled() { "" } else { "  (disabled)" }
     );
-    println!(
-        "mic EQ       [{}] dB{}",
-        fmt_bands(&s.mic_eq()),
-        if s.mic_eq_enabled() { "" } else { "  (disabled)" }
-    );
+    println!("mic EQ       [{}] dB{}", fmt_bands(&s.mic_eq()), if s.mic_eq_enabled() { "" } else { "  (disabled)" });
     println!("surround 3D  {}", if s.surround() { "on" } else { "off" });
-    println!(
-        "reverb       {:.1}%{}",
-        pct(s.reverb()),
-        if s.reverb_enabled() { "" } else { "  (disabled)" }
-    );
-    println!(
-        "noise gate   {:.1}%{}",
-        pct(s.noise_gate()),
-        if s.noise_gate_enabled() { "" } else { "  (disabled)" }
-    );
+    println!("reverb       {:.1}%{}", pct(s.reverb()), if s.reverb_enabled() { "" } else { "  (disabled)" });
+    println!("noise gate   {:.1}%{}", pct(s.noise_gate()), if s.noise_gate_enabled() { "" } else { "  (disabled)" });
     println!("mic meters   {}", if s.mic_meters() { "on" } else { "off" });
     if raw {
         for (name, v) in s.named_ints() {
             println!("  {name:<30} {v}");
         }
     }
-    println!(
-        "meters dB    [{}]",
-        s.meters().iter().map(|m| format!("{m:.0}")).collect::<Vec<_>>().join(" ")
-    );
+    println!("meters dB    [{}]", s.meters().iter().map(|m| format!("{m:.0}")).collect::<Vec<_>>().join(" "));
     if raw {
         for (i, chunk) in s.raw().chunks(16).enumerate() {
             if chunk.iter().any(|&b| b != 0) {
@@ -310,9 +296,9 @@ fn monitor(raw: bool) -> std::io::Result<()> {
     use eposctl::hid::{HidDevice, find_vendor_collections};
 
     let infos = find_vendor_collections();
-    let info = infos.first().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::NotFound, "no EPOS vendor HID collection found")
-    })?;
+    let info = infos
+        .first()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no EPOS vendor HID collection found"))?;
     let dev = HidDevice::open_read(info)?;
     eprintln!("listening on {:04x}:{:04x} (Ctrl+C to stop)", info.vid, info.pid);
     loop {
@@ -322,12 +308,7 @@ fn monitor(raw: bool) -> std::io::Result<()> {
             Ok(f) => {
                 let msg = f.decode();
                 if raw || msg == Message::Unknown {
-                    println!(
-                        "{ts} kind={:#06x} node={} words={:04x?}",
-                        f.kind,
-                        f.node,
-                        f.words()
-                    );
+                    println!("{ts} kind={:#06x} node={} words={:04x?}", f.kind, f.node, f.words());
                 }
                 if msg != Message::Unknown {
                     println!("{ts} {msg:?}");
@@ -483,7 +464,9 @@ fn run(cli: Cli) -> std::io::Result<()> {
             let worst = grid.map(|f| (off(f).abs(), f)).fold((0.0, 0.0), |a, b| if b.0 > a.0 { b } else { a });
             println!(
                 "largest difference from the file's curve: {:.1} dB at {:.0} Hz ({} filters on 9 bands)",
-                worst.0, worst.1, peq.bands.len()
+                worst.0,
+                worst.1,
+                peq.bands.len()
             );
         }
         if imp.shift != 0.0 {

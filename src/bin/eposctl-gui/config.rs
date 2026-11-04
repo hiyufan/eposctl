@@ -126,8 +126,18 @@ pub struct ChatMix {
 impl Default for ChatMix {
     fn default() -> Self {
         let apps = [
-            "discord.exe", "kook.exe", "yy.exe", "qq.exe", "weixin.exe", "wechat.exe", "teamspeak.exe",
-            "ts3client_win64.exe", "mumble.exe", "skype.exe", "zoom.exe", "ms-teams.exe",
+            "discord.exe",
+            "kook.exe",
+            "yy.exe",
+            "qq.exe",
+            "weixin.exe",
+            "wechat.exe",
+            "teamspeak.exe",
+            "ts3client_win64.exe",
+            "mumble.exe",
+            "skype.exe",
+            "zoom.exe",
+            "ms-teams.exe",
         ];
         Self { enabled: false, balance: 0.0, voice_apps: apps.map(String::from).to_vec() }
     }
@@ -242,10 +252,7 @@ fn path() -> Option<PathBuf> {
 
 impl Config {
     pub fn load() -> Self {
-        path()
-            .and_then(|p| std::fs::read(p).ok())
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .unwrap_or_default()
+        path().and_then(|p| std::fs::read(p).ok()).and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
     }
 
     pub fn save(&self) {
@@ -265,7 +272,7 @@ impl Config {
 
 pub mod autostart {
     use windows_sys::Win32::System::Registry::{
-        HKEY_CURRENT_USER, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, REG_SZ,
+        HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW,
     };
 
     const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -360,8 +367,10 @@ mod tests {
         assert_eq!(p[0].sound.reverb, 1.0);
         assert_eq!(parse_presets(&format!("[{one},{one}]")).unwrap().len(), 2);
         assert!(parse_presets("{\"presets\": 3}").is_err());
-        assert!(parse_presets(r#"[{"name":"","sound":{"speaker_eq":[0,0,0,0,0,0,0,0,0],"reverb":0,"surround":false}}]"#)
-            .unwrap()
-            .is_empty());
+        assert!(
+            parse_presets(r#"[{"name":"","sound":{"speaker_eq":[0,0,0,0,0,0,0,0,0],"reverb":0,"surround":false}}]"#)
+                .unwrap()
+                .is_empty()
+        );
     }
 }

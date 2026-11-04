@@ -49,7 +49,10 @@ pub fn plot(ui: &mut Ui, peq: &mut Peq, fitted: Option<(&[f32; BANDS], f32)>, he
     }
     for (i, &c) in CENTRES_HZ.iter().enumerate() {
         let x = x_of(c);
-        painter.line_segment([pos2(x, plot.top()), pos2(x, plot.bottom())], Stroke::new(1.0, Color32::from_rgb(0x22, 0x24, 0x2A)));
+        painter.line_segment(
+            [pos2(x, plot.top()), pos2(x, plot.bottom())],
+            Stroke::new(1.0, Color32::from_rgb(0x22, 0x24, 0x2A)),
+        );
         painter.text(pos2(x, rect.bottom() - 4.0), Align2::CENTER_BOTTOM, band_label(i), font.clone(), SECONDARY);
     }
 
@@ -148,14 +151,14 @@ pub fn table(ui: &mut Ui, s: &Strings, peq: &mut Peq) -> Changed {
         for (i, b) in peq.bands.iter_mut().enumerate() {
             ui.label(egui::RichText::new(format!("{}", i + 1)).color(SECONDARY));
             let before = *b;
-            egui::ComboBox::from_id_salt(("peq_kind", i))
-                .selected_text(kind_label(s, b.kind))
-                .width(70.0)
-                .show_ui(ui, |ui| {
+            egui::ComboBox::from_id_salt(("peq_kind", i)).selected_text(kind_label(s, b.kind)).width(70.0).show_ui(
+                ui,
+                |ui| {
                     for k in [Kind::Peak, Kind::LowShelf, Kind::HighShelf] {
                         ui.selectable_value(&mut b.kind, k, kind_label(s, k));
                     }
-                });
+                },
+            );
             let speed = b.freq * 0.01;
             let f = ui.add(DragValue::new(&mut b.freq).range(F_MIN..=F_MAX).speed(speed).suffix(" Hz").max_decimals(1));
             let g = ui.add_enabled(
@@ -166,14 +169,23 @@ pub fn table(ui: &mut Ui, s: &Strings, peq: &mut Peq) -> Changed {
             if widgets::switch(ui, &mut b.on, true).changed() {
                 out.settled = true;
             }
-            if ui.add(egui::Button::new(egui::RichText::new("×").font(theme::font(18.0)).color(DANGER)).frame(false)).clicked() {
+            if ui
+                .add(egui::Button::new(egui::RichText::new("×").font(theme::font(18.0)).color(DANGER)).frame(false))
+                .clicked()
+            {
                 remove = Some(i);
             }
             ui.end_row();
             if *b != before {
                 out.curve = true;
             }
-            if f.drag_stopped() || g.drag_stopped() || q.drag_stopped() || f.lost_focus() || g.lost_focus() || q.lost_focus() {
+            if f.drag_stopped()
+                || g.drag_stopped()
+                || q.drag_stopped()
+                || f.lost_focus()
+                || g.lost_focus()
+                || q.lost_focus()
+            {
                 out.settled = true;
             }
             if before.kind != b.kind {

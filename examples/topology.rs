@@ -66,10 +66,11 @@ fn dump_part(part: &IPart, depth: usize, seen: &mut HashSet<(u32, String)>, inco
         // Follow connectors across filter boundaries.
         if ptype == Connector
             && let Ok(conn) = part.cast::<IConnector>()
-                && let Ok(other) = conn.GetConnectedTo()
-                    && let Ok(p) = other.cast::<IPart>() {
-                        dump_part(&p, depth + 1, seen, incoming)?;
-                    }
+            && let Ok(other) = conn.GetConnectedTo()
+            && let Ok(p) = other.cast::<IPart>()
+        {
+            dump_part(&p, depth + 1, seen, incoming)?;
+        }
     }
     Ok(())
 }

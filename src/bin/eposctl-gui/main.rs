@@ -564,7 +564,12 @@ impl App {
         }
         let at = factory()
             .map(|p| matches(&cur, &p.speaker_eq, p.reverb, p.surround))
-            .chain(self.cfg.custom_presets.iter().map(|p| matches(&cur, &p.sound.speaker_eq, p.sound.reverb, p.sound.surround)))
+            .chain(
+                self.cfg
+                    .custom_presets
+                    .iter()
+                    .map(|p| matches(&cur, &p.sound.speaker_eq, p.sound.reverb, p.sound.surround)),
+            )
             .position(|m| m);
         let n = ids.len() as isize;
         let i = match at {
@@ -735,7 +740,13 @@ impl App {
             ui.add_space(8.0);
             widgets::divider(ui);
             ui.add_space(4.0);
-            let headset: Vec<&str> = list.output.iter().chain(&list.input).filter(|e| eposctl::audio::is_epos(&e.name)).map(|e| e.name.as_str()).collect();
+            let headset: Vec<&str> = list
+                .output
+                .iter()
+                .chain(&list.input)
+                .filter(|e| eposctl::audio::is_epos(&e.name))
+                .map(|e| e.name.as_str())
+                .collect();
             if headset.is_empty() {
                 ui.label(RichText::new(s.devsw_no_headset).font(theme::font(12.5)).color(WARN));
             } else {
@@ -744,14 +755,19 @@ impl App {
             ui.add_space(4.0);
             let mut dirty = false;
             for (title, eps, which) in [(s.devsw_output, &list.output, 0), (s.devsw_input, &list.input, 1)] {
-                let choices: Vec<(String, String)> =
-                    eps.iter().filter(|e| !eposctl::audio::is_epos(&e.name)).map(|e| (e.id.clone(), e.name.clone())).collect();
-                let slot = if which == 0 { &mut self.cfg.device_switch.output } else { &mut self.cfg.device_switch.input };
+                let choices: Vec<(String, String)> = eps
+                    .iter()
+                    .filter(|e| !eposctl::audio::is_epos(&e.name))
+                    .map(|e| (e.id.clone(), e.name.clone()))
+                    .collect();
+                let slot =
+                    if which == 0 { &mut self.cfg.device_switch.output } else { &mut self.cfg.device_switch.input };
                 ui.horizontal(|ui| {
                     ui.set_min_height(36.0);
                     ui.label(RichText::new(title).color(TEXT));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        dirty |= preset_combo(ui, ("devsw", which), slot, &choices, Some(s.devsw_none), s.devsw_missing);
+                        dirty |=
+                            preset_combo(ui, ("devsw", which), slot, &choices, Some(s.devsw_none), s.devsw_missing);
                     });
                 });
             }
@@ -878,7 +894,9 @@ impl App {
                     if r.clicked() && self.eqapo {
                         cfg.output = PeqOutput::EqApo;
                     }
-                    if widgets::ghost_toggle(ui, s.peq_out_epos, has_epos, cfg.output == PeqOutput::Epos).clicked() && has_epos {
+                    if widgets::ghost_toggle(ui, s.peq_out_epos, has_epos, cfg.output == PeqOutput::Epos).clicked()
+                        && has_epos
+                    {
                         cfg.output = PeqOutput::Epos;
                     }
                 });
@@ -1008,7 +1026,8 @@ impl App {
             return;
         }
         let auto = &self.cfg.auto;
-        let target = auto.rules.iter().find(|r| r.exe == exe).map(|r| r.preset.clone()).or_else(|| auto.default.clone());
+        let target =
+            auto.rules.iter().find(|r| r.exe == exe).map(|r| r.preset.clone()).or_else(|| auto.default.clone());
         self.auto_app = Some(exe);
         if target != self.auto_target {
             self.auto_target = target.clone();
@@ -1185,7 +1204,12 @@ impl App {
                     ACCENT,
                 );
             }
-            icons::paint(p, egui::Rect::from_center_size(rect.center() - vec2(0.0, 9.0), vec2(22.0, 22.0)), icon, color);
+            icons::paint(
+                p,
+                egui::Rect::from_center_size(rect.center() - vec2(0.0, 9.0), vec2(22.0, 22.0)),
+                icon,
+                color,
+            );
             p.text(rect.center() + vec2(0.0, 15.0), egui::Align2::CENTER_CENTER, label, theme::font(12.0), color);
             if resp.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -1240,7 +1264,8 @@ impl App {
             ui.label(RichText::new(s.apo_missing_body).color(SECONDARY));
             ui.add_space(16.0);
             ui.horizontal(|ui| {
-                let w = 14.0 + 8.0 + ui.painter().layout_no_wrap(s.apo_retrying.into(), theme::font(13.0), FAINT).size().x;
+                let w =
+                    14.0 + 8.0 + ui.painter().layout_no_wrap(s.apo_retrying.into(), theme::font(13.0), FAINT).size().x;
                 ui.add_space((ui.available_width() - w).max(0.0) / 2.0);
                 widgets::spinner(ui);
                 ui.label(RichText::new(s.apo_retrying).font(theme::font(13.0)).color(FAINT));
@@ -1368,13 +1393,11 @@ impl App {
                     if widgets::ghost_toggle(ui, s.undo, can_undo, false).on_hover_text(s.undo_tip).clicked() {
                         self.undo();
                     }
-                    let differs = self
-                        .ab_ref
-                        .as_ref()
-                        .is_some_and(|r| !matches(&sound, &r.speaker_eq, r.reverb, r.surround));
+                    let differs =
+                        self.ab_ref.as_ref().is_some_and(|r| !matches(&sound, &r.speaker_eq, r.reverb, r.surround));
                     let label = if comparing { s.comparing } else { s.compare };
-                    let r = widgets::ghost_toggle(ui, label, comparing || differs, comparing)
-                        .on_hover_text(s.compare_tip);
+                    let r =
+                        widgets::ghost_toggle(ui, label, comparing || differs, comparing).on_hover_text(s.compare_tip);
                     if r.clicked() {
                         if comparing {
                             self.stop_compare();
@@ -1732,7 +1755,8 @@ impl App {
             widgets::divider(ui);
             ui.add_space(4.0);
             let mut v = self.autostart;
-            if Self::setting_row(ui, s.autostart, s.autostart_desc, &mut v, false) && config::autostart::set(v).is_ok() {
+            if Self::setting_row(ui, s.autostart, s.autostart_desc, &mut v, false) && config::autostart::set(v).is_ok()
+            {
                 self.autostart = v;
             }
             ui.add_space(4.0);

@@ -86,9 +86,7 @@ pub fn list(directory: &str) -> io::Result<Vec<ObjectEntry>> {
     let mut handle: HANDLE = ptr::null_mut();
     let status = unsafe { NtOpenDirectoryObject(&mut handle, DIRECTORY_QUERY, &attrs) };
     if status != 0 {
-        return Err(io::Error::other(format!(
-            "NtOpenDirectoryObject({directory}) failed: NTSTATUS {status:#010x}"
-        )));
+        return Err(io::Error::other(format!("NtOpenDirectoryObject({directory}) failed: NTSTATUS {status:#010x}")));
     }
 
     // u64 backing store keeps the buffer suitably aligned for the pointer-bearing structs.

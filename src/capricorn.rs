@@ -155,16 +155,26 @@ impl Frame {
 /// Messages whose meaning has been established from captures.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Message {
-    HeadsetLink { connected: bool },
-    Battery { percent: u8 },
+    HeadsetLink {
+        connected: bool,
+    },
+    Battery {
+        percent: u8,
+    },
     FirmwareVersion(String),
     SerialNumber(String),
     ProductName(String),
     /// Acknowledgement of a sidetone write; 0 = success (inferred).
-    SidetoneAck { status: u16 },
+    SidetoneAck {
+        status: u16,
+    },
     /// Raw sidetone value: official slider at minimum gave 0xFF, at maximum 0x00.
-    SidetoneChanged { raw: u16 },
-    Anc { on: bool },
+    SidetoneChanged {
+        raw: u16,
+    },
+    Anc {
+        on: bool,
+    },
     Unknown,
 }
 

@@ -1,8 +1,7 @@
 //! Small custom widgets in the suite's style: pill chips, switches, sliders, panels.
 
 use eframe::egui::{
-    self, Color32, CornerRadius, Frame, Key, Margin, Rect, Response, Sense, Stroke, StrokeKind, Ui, pos2,
-    vec2,
+    self, Color32, CornerRadius, Frame, Key, Margin, Rect, Response, Sense, Stroke, StrokeKind, Ui, pos2, vec2,
 };
 
 use crate::theme::{self, ACCENT, ACCENT_DIM, BG, DANGER, FAINT, HAIRLINE, PANEL, RAISED, SECONDARY, TEXT, WARN};
@@ -108,7 +107,13 @@ pub fn switch(ui: &mut Ui, on: &mut bool, enabled: bool) -> Response {
     let track = if *on { ACCENT } else { RAISED };
     let track = if enabled { track } else { track.gamma_multiply(0.4) };
     let p = ui.painter();
-    p.rect(rect, CornerRadius::same(12), track, Stroke::new(1.0, if *on { ACCENT } else { HAIRLINE }), StrokeKind::Inside);
+    p.rect(
+        rect,
+        CornerRadius::same(12),
+        track,
+        Stroke::new(1.0, if *on { ACCENT } else { HAIRLINE }),
+        StrokeKind::Inside,
+    );
     let x = egui::lerp((rect.left() + 12.0)..=(rect.right() - 12.0), t);
     let knob = if *on { BG } else { SECONDARY };
     p.circle_filled(pos2(x, rect.center().y), 8.0, if enabled { knob } else { FAINT });
@@ -139,7 +144,13 @@ pub fn slider(ui: &mut Ui, value: &mut f32, enabled: bool) -> Response {
         }
         if resp.has_focus() {
             let (l, r) = ui.input(|i| (i.key_pressed(Key::ArrowLeft), i.key_pressed(Key::ArrowRight)));
-            let d = if r { 0.01 } else if l { -0.01 } else { 0.0 };
+            let d = if r {
+                0.01
+            } else if l {
+                -0.01
+            } else {
+                0.0
+            };
             if d != 0.0 {
                 *value = ((*value + d) * 100.0).round().clamp(0.0, 100.0) / 100.0;
                 resp.mark_changed();
@@ -169,7 +180,11 @@ pub fn row_title(ui: &mut Ui, title: &str, value: Option<String>, enabled: bool)
         ui.label(egui::RichText::new(title).font(theme::font_strong(15.0)).color(c));
         if let Some(v) = value {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(egui::RichText::new(v).font(theme::font_strong(15.0)).color(if enabled { ACCENT } else { FAINT }));
+                ui.label(egui::RichText::new(v).font(theme::font_strong(15.0)).color(if enabled {
+                    ACCENT
+                } else {
+                    FAINT
+                }));
             });
         }
     });
@@ -242,7 +257,6 @@ pub fn spinner(ui: &mut Ui) {
 pub fn heading(ui: &mut Ui, text: &str) {
     ui.label(egui::RichText::new(text).font(theme::font_strong(15.0)).color(TEXT));
 }
-
 
 /// Height of `level_meter`, so a neighbouring panel can reserve the same space.
 pub const LEVEL_ROW_H: f32 = 20.0;

@@ -107,7 +107,9 @@ impl Filter {
                 )
             }
             Kind::LowPass => ((1.0 - cos) / 2.0, 1.0 - cos, (1.0 - cos) / 2.0, 1.0 + alpha, -2.0 * cos, 1.0 - alpha),
-            Kind::HighPass => ((1.0 + cos) / 2.0, -(1.0 + cos), (1.0 + cos) / 2.0, 1.0 + alpha, -2.0 * cos, 1.0 - alpha),
+            Kind::HighPass => {
+                ((1.0 + cos) / 2.0, -(1.0 + cos), (1.0 + cos) / 2.0, 1.0 + alpha, -2.0 * cos, 1.0 - alpha)
+            }
             Kind::Notch => (1.0, -2.0 * cos, 1.0, 1.0 + alpha, -2.0 * cos, 1.0 - alpha),
             Kind::AllPass => return 0.0,
         };
@@ -182,7 +184,8 @@ fn looks_like_csv(text: &str) -> bool {
 
 fn parse_csv(text: &str) -> Result<([f64; BANDS], usize), String> {
     let mut lines = text.lines().filter(|l| !l.trim().is_empty());
-    let header: Vec<String> = lines.next().unwrap_or_default().split(',').map(|h| h.trim().to_ascii_lowercase()).collect();
+    let header: Vec<String> =
+        lines.next().unwrap_or_default().split(',').map(|h| h.trim().to_ascii_lowercase()).collect();
     let col = header
         .iter()
         .position(|h| h == "equalization")
@@ -228,9 +231,8 @@ fn parse_apo(text: &str) -> Result<([f64; BANDS], usize), String> {
             filters.push(f);
         }
     }
-    let target = |f: f64| {
-        filters.iter().map(|x| x.db_at(f)).sum::<f64>() + graphics.iter().map(|g| interp(g, f)).sum::<f64>()
-    };
+    let target =
+        |f: f64| filters.iter().map(|x| x.db_at(f)).sum::<f64>() + graphics.iter().map(|g| interp(g, f)).sum::<f64>();
     Ok((crate::peq::fit(target), used))
 }
 
