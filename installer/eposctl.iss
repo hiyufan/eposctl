@@ -135,7 +135,7 @@ begin
   DownloadPage := CreateDownloadPage(SetupMessage(msgWizardPreparing), CustomMessage('Downloading'), nil);
 end;
 
-{ Download one file into {tmp}; False (with a message) when it fails. }
+// Download one file into the temp folder; False (with a message) when it fails.
 function Fetch(Url, FileName, Sha256: String): Boolean;
 begin
   Result := False;
