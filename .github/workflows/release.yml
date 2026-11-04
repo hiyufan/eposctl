@@ -1,27 +1,74 @@
 name: Release
 
+# Releases the version in Cargo.toml as tag v<version>:
+# - automatically when a push to main changes Cargo.toml and that version has no release yet,
+# - by hand with "Run workflow" (Actions tab),
+# - or when a v* tag is pushed.
 on:
   push:
+    branches: [main]
+    paths: [Cargo.toml]
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test
-      - run: cargo build --release
-      - name: Package
+        with:
+          fetch-depth: 0
+
+      - name: Version
+        id: ver
         shell: pwsh
         run: |
-          # The exes are attached on their own, so most people never deal with
-          # a zip; the zip also carries the README and licence.
-          $name = "eposctl-${{ github.ref_name }}-windows-x64"
-          New-Item -ItemType Directory $name, dist | Out-Null
+          $ver = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          $tag = "v$ver"
+          if ("${{ github.ref_type }}" -eq "tag" -and "${{ github.ref_name }}" -ne $tag) {
+            throw "tag ${{ github.ref_name }} does not match Cargo.toml version $ver"
+          }
+          $released = gh release view $tag --json tagName 2>$null
+          $global:LASTEXITCODE = 0  # "not found" is the normal case, not a failure
+          $skip = if ($released) { "true" } else { "false" }
+          if ($skip -eq "true") { Write-Host "$tag is already released; nothing to do." }
+          "version=$ver" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "skip=$skip" >> $env:GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.ver.outputs.skip != 'true'
+      - run: cargo test
+        if: steps.ver.outputs.skip != 'true'
+      - run: cargo build --release
+        if: steps.ver.outputs.skip != 'true'
+
+      - name: Installer
+        if: steps.ver.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y | Out-Null
+          $iscc = Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" | Select-Object -First 1
+          & $iscc.FullName "/DAppVersion=${{ steps.ver.outputs.version }}" installer\eposctl.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Package
+        if: steps.ver.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          # The installer and the bare exes are attached on their own, so most
+          # people never deal with a zip; the zip also carries the README and licence.
+          $name = "eposctl-${{ steps.ver.outputs.tag }}-windows-x64"
+          New-Item -ItemType Directory $name | Out-Null
           Copy-Item target/release/eposctl.exe, target/release/eposctl-gui.exe, README.md, README.zh-CN.md, LICENSE $name
           Compress-Archive -Path $name -DestinationPath "dist/$name.zip"
           Copy-Item target/release/eposctl-gui.exe, target/release/eposctl.exe dist
@@ -29,8 +76,13 @@ jobs:
             "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
           } | Set-Content dist/SHA256SUMS.txt
           Get-Content dist/SHA256SUMS.txt
+
       - uses: softprops/action-gh-release@v2
+        if: steps.ver.outputs.skip != 'true'
         with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: eposctl ${{ steps.ver.outputs.tag }}
           files: dist/*
           body_path: .github/release-notes.md
           generate_release_notes: true

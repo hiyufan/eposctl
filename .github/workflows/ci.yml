@@ -17,9 +17,19 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       - run: cargo build --release
+      - name: Installer
+        shell: pwsh
+        run: |
+          # Builds the installer on every push, so a broken script shows up before a release.
+          $ver = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          choco install innosetup --no-progress -y | Out-Null
+          $iscc = Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" | Select-Object -First 1
+          & $iscc.FullName "/DAppVersion=$ver" installer\eposctl.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:
           name: eposctl-windows-x64
           path: |
             target/release/eposctl-gui.exe
             target/release/eposctl.exe
+            dist/eposctl-setup.exe

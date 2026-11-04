@@ -60,6 +60,14 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
       makes speech much quieter
 - [ ] `hrtf_preset` values and the other compressor presets
 
+## Distribution
+
+- [x] Installer (Inno Setup, per user, no admin): Start menu, optional start with Windows,
+      uninstaller; offers Equalizer APO (pinned version and SHA-256) when the EPOS driver is missing
+- [x] Continuous delivery: bumping the version in Cargo.toml on main releases it (installer,
+      exes, zip, checksums); also a manual "Run workflow" button and v* tags
+- [ ] Code signing (removes the SmartScreen warning; needs a certificate)
+
 ## Later
 
 - More EPOS models, driven by device reports

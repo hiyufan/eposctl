@@ -305,7 +305,7 @@ impl App {
             io_msg: None,
             eq_msg: None,
             peq_open: false,
-            eqapo: false,
+            eqapo: eposctl::eqapo::config_dir().is_some(),
             peq_msg: None,
             last_linked: None,
             devices: devswitch::Devices::new(cc.egui_ctx.clone()),
@@ -842,6 +842,12 @@ impl App {
     fn peq_panel(&mut self, ui: &mut Ui) {
         let s = self.s();
         let mut cfg = self.cfg.peq.clone();
+        // Without the EPOS driver the only output is Equalizer APO. Taken before
+        // `old_output`, so opening the page alone writes nothing.
+        let has_epos = self.s.is_some();
+        if !has_epos {
+            cfg.output = PeqOutput::EqApo;
+        }
         let old_output = cfg.output;
         let mut changed = peq::Changed::default();
         let current = self.s.as_ref().map(|x| x.speaker_eq()).unwrap_or_default();
@@ -872,7 +878,7 @@ impl App {
                     if r.clicked() && self.eqapo {
                         cfg.output = PeqOutput::EqApo;
                     }
-                    if widgets::ghost_toggle(ui, s.peq_out_epos, true, cfg.output == PeqOutput::Epos).clicked() {
+                    if widgets::ghost_toggle(ui, s.peq_out_epos, has_epos, cfg.output == PeqOutput::Epos).clicked() && has_epos {
                         cfg.output = PeqOutput::Epos;
                     }
                 });
@@ -1246,7 +1252,15 @@ impl App {
 
     fn page_sound(&mut self, ui: &mut Ui) {
         let s = self.s();
-        let Some(cur) = self.s.clone() else { return self.apo_missing(ui) };
+        let Some(cur) = self.s.clone() else {
+            self.apo_missing(ui);
+            // Without the EPOS driver, Equalizer APO can still do the EQ.
+            if self.eqapo {
+                ui.add_space(12.0);
+                self.peq_panel(ui);
+            }
+            return;
+        };
         let sound = sound_of(&cur);
 
         // Presets.

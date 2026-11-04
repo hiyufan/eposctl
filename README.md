@@ -17,9 +17,9 @@ EQ, presets, surround, mic, battery and more, in one portable exe.
 
 **English** | [简体中文](README.zh-CN.md)
 
-<a href="https://github.com/hiyufan/eposctl/releases/latest/download/eposctl-gui.exe"><img src="https://img.shields.io/badge/Download-eposctl--gui.exe-2bd4bd?style=for-the-badge&logo=windows&logoColor=white" height="44" alt="Download eposctl-gui.exe"></a>
+<a href="https://github.com/hiyufan/eposctl/releases/latest/download/eposctl-setup.exe"><img src="https://img.shields.io/badge/Download-installer-2bd4bd?style=for-the-badge&logo=windows&logoColor=white" height="44" alt="Download the installer"></a>
 
-<sub>Windows 10/11 x64. No installer, no admin rights. Tested with the EPOS H3PRO Hybrid.</sub>
+<sub>Windows 10/11 x64, no admin rights. Prefer no installer? Get the <a href="https://github.com/hiyufan/eposctl/releases/latest/download/eposctl-gui.exe">portable eposctl-gui.exe</a>. Tested with the EPOS H3PRO Hybrid.</sub>
 
 <br>
 
@@ -67,12 +67,17 @@ directly, so you keep every setting without the old app or its background servic
 
 ## Get started
 
-1. **Have the EPOS audio driver** (`EPOS APO`). The Gaming Suite installer puts
-   it on your system, so if you ever installed the Gaming Suite you have it.
-   The Gaming Suite app itself can stay closed or be uninstalled.
-2. **Download** [`eposctl-gui.exe`](https://github.com/hiyufan/eposctl/releases/latest/download/eposctl-gui.exe)
-   and put it anywhere.
-3. **Run it**, with the dongle plugged in and the headset on.
+1. **Download and run** [`eposctl-setup.exe`](https://github.com/hiyufan/eposctl/releases/latest/download/eposctl-setup.exe)
+   (or the portable [`eposctl-gui.exe`](https://github.com/hiyufan/eposctl/releases/latest/download/eposctl-gui.exe)).
+2. **The EPOS audio driver** (`EPOS APO`) does the EQ, surround, reverb and noise
+   gate. The Gaming Suite installer put it on your system, so if you ever installed
+   the Gaming Suite you have it; the Gaming Suite app itself can stay closed or be
+   uninstalled. EPOS no longer offers it for download and eposctl cannot ship it
+   (it is EPOS's software). Without it, the installer offers to set up
+   [Equalizer APO](https://sourceforge.net/projects/equalizerapo/) (open source)
+   and eposctl's parametric EQ uses that instead. Battery, sidetone and mic noise
+   reduction work either way.
+3. **Start eposctl**, with the dongle plugged in and the headset on.
 
 > [!TIP]
 > Windows may say "Windows protected your PC" because the exe is not code-signed.
@@ -99,7 +104,9 @@ how new models get supported.
 
 Only its driver. The sound settings are applied by the EPOS audio driver
 (`EAPO.dll`), which the Gaming Suite installer puts on your system. The app and
-its service are not needed.
+its service are not needed. Without the driver, use Equalizer APO for the EQ
+(the eposctl installer can set it up); surround and the noise gate need the EPOS
+driver.
 </details>
 
 <details>
