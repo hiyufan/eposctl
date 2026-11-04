@@ -32,7 +32,12 @@ settings, not EPOS parameters (observed).
 `shared_memory_ipc_listener<…>` (observed in strings).
 
 All three objects can be opened for read **and write** by a normal,
-non-elevated user (observed).
+non-elevated user (observed). Both the APO and the service create them with
+`CreateFileMappingW` (create or open) and the same security descriptor,
+`D:(A;OICI;FA;;;BU)(A;OICI;FA;;;LS)` (full access for Users and LocalService;
+string found in both binaries). So the APO does not need the service: with it
+stopped, the APO creates the block itself with the same rights. `eposctl suite
+off` relies on this.
 
 Both processes run as `NT AUTHORITY\LocalService` (observed: service account of
 `EPOSGamingSuiteService` and `Audiosrv`).

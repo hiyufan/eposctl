@@ -58,6 +58,8 @@ pub struct App {
     low_battery: battery::LowAlarm,
     mixer: chatmix::Mixer,
     meters: Meters,
+    /// The official EPOS Gaming Suite next to eposctl.
+    official: crate::official::Official,
     autostart: bool,
     quitting: bool,
 }
@@ -85,6 +87,7 @@ struct View {
     preset_files_notice: Option<Notice>,
     eq_notice: Option<(EqTarget, Notice)>,
     peq_notice: Option<Notice>,
+    official_notice: Option<Notice>,
 }
 
 /// Read a file chosen in a dialog and parse it; errors as text for a notice.
@@ -119,6 +122,7 @@ impl App {
             low_battery: battery::LowAlarm::default(),
             mixer: chatmix::Mixer::spawn(),
             meters: Meters::default(),
+            official: crate::official::Official::default(),
             autostart: autostart::is_enabled(),
             quitting: false,
         };

@@ -19,6 +19,11 @@ pub struct ShowEvent(Option<isize>);
 
 /// `None` if another instance is running (it has been told to show itself).
 pub fn claim() -> Option<ShowEvent> {
+    // Debug builds taking a screenshot run next to a normal instance.
+    #[cfg(debug_assertions)]
+    if std::env::var_os("EPOSCTL_SHOT").is_some() {
+        return Some(ShowEvent(None));
+    }
     let name = wide(SHOW_EVENT);
     // SAFETY: `name` is NUL-terminated and outlives the call.
     let h = unsafe { CreateEventW(std::ptr::null(), 0, 0, name.as_ptr()) };

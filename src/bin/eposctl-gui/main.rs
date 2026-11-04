@@ -7,7 +7,8 @@
 //! - background services: `worker` (HID), `foreground`, `hotkeys`, `chatmix`,
 //!   `devswitch`, `tray`;
 //! - drawing: `widgets`, `eq`, `peq`, `icons`, `theme`;
-//! - Windows plumbing: `instance`, `window`, `autostart`, `dialog`, `notify`.
+//! - Windows plumbing: `instance`, `window`, `autostart`, `dialog`, `notify`;
+//! - `official`: the official EPOS Gaming Suite next to eposctl.
 
 #![windows_subsystem = "windows"]
 
@@ -31,6 +32,7 @@ mod icons;
 mod instance;
 mod meters;
 mod notify;
+mod official;
 mod peq;
 mod strings;
 mod theme;
@@ -42,6 +44,10 @@ mod worker;
 use eframe::egui;
 
 fn main() -> eframe::Result {
+    // `--suite on|off`: the elevated helper for the Settings page; no window.
+    if let Some(code) = official::helper_mode() {
+        std::process::exit(code);
+    }
     let Some(show_event) = instance::claim() else { return Ok(()) };
     let icon = egui::IconData { rgba: icons::bitmap(64, None, true), width: 64, height: 64 };
     let options = eframe::NativeOptions {

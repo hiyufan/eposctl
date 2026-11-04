@@ -20,6 +20,7 @@ impl App {
         ui.add_space(12.0);
         self.preset_files_panel(ui);
         ui.add_space(12.0);
+        self.official_panel(ui);
         widgets::card(ui, |ui| self.about(ui));
     }
 

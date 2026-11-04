@@ -4,6 +4,7 @@ mod chat_mix;
 mod device;
 mod device_switch;
 mod mic;
+mod official;
 mod parametric;
 mod per_app;
 mod preset_files;

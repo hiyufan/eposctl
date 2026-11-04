@@ -60,6 +60,11 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
       makes speech much quieter
 - [ ] `hrtf_preset` values and the other compressor presets
 
+## Living next to the official software
+
+- [x] Switch the Gaming Suite's service and app off (and back on) from Settings or
+      `eposctl suite`, keeping the driver: the APO creates its shared memory itself
+
 ## Distribution
 
 - [x] Installer (Inno Setup, per user, no admin): Start menu, optional start with Windows,

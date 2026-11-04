@@ -28,6 +28,7 @@ src/
     icons.rs theme.rs           icons, palette and fonts
     instance.rs window.rs       Windows plumbing
     autostart.rs dialog.rs notify.rs
+    official.rs                 the official Gaming Suite: state, switching (elevated helper)
     debug.rs                    debug builds only: screenshot hooks
 ```
 

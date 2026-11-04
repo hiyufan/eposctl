@@ -98,7 +98,7 @@ eposctl 直接和驱动通信，不用官方软件、也不用它的后台服务
 <summary><b>需要装 EPOS Gaming Suite 吗？</b></summary>
 
 只需要它的驱动。音效是 EPOS 音效驱动（`EAPO.dll`）处理的，驱动由 Gaming Suite
-安装包装到系统里。Gaming Suite 软件和它的后台服务都不需要。没有驱动时可以用 Equalizer APO 实现 EQ
+安装包装到系统里。Gaming Suite 软件和它的后台服务都不需要，可以在 设置 →“EPOS 官方软件”（或 `eposctl suite off`）里一键停用，驱动会保留。没有驱动时可以用 Equalizer APO 实现 EQ
 （eposctl 安装程序可以帮你装），环绕声和噪声门则需要 EPOS 驱动。
 </details>
 
@@ -169,6 +169,7 @@ eposctl sidetone [0-255]         # 查看或设置侧音
 eposctl noise-reduction [0-2]    # 耳机麦克风降噪：关、中、强
 eposctl monitor [--raw]          # 打印耳机事件（只读）
 eposctl report [--query]         # 生成只读的设备报告，用于提 issue
+eposctl suite [on|off]           # 官方 Gaming Suite 的后台服务和程序（off 会保留驱动）
 eposctl raw --probe              # 只读的 HID 查询，用于研究协议
 
 eposctl audio                    # Windows 播放/录音设备，* 为默认

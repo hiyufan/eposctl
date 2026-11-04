@@ -9,7 +9,7 @@ use std::process::ExitCode;
 use clap::Parser;
 
 use args::{Cli, Cmd};
-use commands::{audio, diag, dsp, eqapo, headset};
+use commands::{audio, diag, dsp, eqapo, headset, suite};
 
 fn run(cli: Cli) -> io::Result<()> {
     let dev = cli.device;
@@ -31,8 +31,9 @@ fn run(cli: Cli) -> io::Result<()> {
         Cmd::Sidetone { level } => headset::sidetone(level),
         Cmd::NoiseReduction { level } => headset::noise_reduction(level),
 
-        // Windows audio devices.
+        // Windows audio devices, and the official software next to eposctl.
         Cmd::Audio { cmd } => audio::run(cmd),
+        Cmd::Suite { state } => suite::run(state.map(args::OnOff::is_on)),
 
         // Research and bug reports.
         Cmd::Report { seconds, query } => diag::report(seconds, query),

@@ -105,7 +105,8 @@ how new models get supported.
 
 Only its driver. The sound settings are applied by the EPOS audio driver
 (`EAPO.dll`), which the Gaming Suite installer puts on your system. The app and
-its service are not needed. Without the driver, use Equalizer APO for the EQ
+its service are not needed; Settings → "Official EPOS software" (or `eposctl suite off`)
+switches them off and keeps the driver. Without the driver, use Equalizer APO for the EQ
 (the eposctl installer can set it up); surround and the noise gate need the EPOS
 driver.
 </details>
@@ -187,6 +188,7 @@ eposctl sidetone [0-255]         # show or set sidetone level
 eposctl noise-reduction [0-2]    # headset mic noise reduction: off, medium, strong
 eposctl monitor [--raw]          # print headset events (read-only)
 eposctl report [--query]         # read-only device report for a GitHub issue
+eposctl suite [on|off]           # the official Gaming Suite's service and app (off keeps the driver)
 eposctl raw --probe              # read-only HID queries, for protocol research
 
 eposctl audio                    # Windows playback/recording devices, * = default

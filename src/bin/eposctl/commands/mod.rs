@@ -5,3 +5,4 @@ pub mod diag;
 pub mod dsp;
 pub mod eqapo;
 pub mod headset;
+pub mod suite;

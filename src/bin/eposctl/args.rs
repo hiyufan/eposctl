@@ -100,6 +100,10 @@ pub enum Cmd {
         #[command(subcommand)]
         cmd: Option<AudioCmd>,
     },
+    /// Show the official EPOS Gaming Suite's service and app, or switch them off / back on.
+    /// eposctl does not need them; the driver stays either way. Switching asks for
+    /// administrator rights.
+    Suite { state: Option<OnOff> },
     /// Send one raw HID request to the headset and print every frame that comes back
     /// (research). GROUP and COMMAND are hex, as in docs/protocol.md: `raw 0A 12`
     Raw {
