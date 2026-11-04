@@ -138,6 +138,9 @@ struct App {
 
     /// Original meter flag while we have switched it on for the meters.
     monitors: Option<bool>,
+    /// Recording stream held open while metering: the APO only meters the mic
+    /// while some program records from it.
+    recorder: Option<eposctl::audio::KeepRecording>,
     meters: Meters,
     /// We hid the window (tray). Tracked here because the viewport's own
     /// visibility info does not reliably update after `Visible(false)`.
@@ -300,6 +303,7 @@ impl App {
             mixer: chatmix::Mixer::spawn(),
             mix_input: String::new(),
             monitors: None,
+            recorder: None,
             meters: Meters::new(),
             hidden: false,
             cfg,
@@ -394,6 +398,7 @@ impl App {
         self.apo = None;
         self.s = None;
         self.monitors = None;
+        self.recorder = None;
     }
 
     /// The APO only updates its level meters while `mic_meters_enabled` is set.
@@ -408,10 +413,12 @@ impl App {
                     let original = cur.mic_meters();
                     if ch.modify(|s| s.set_mic_meters(true)).is_ok() {
                         self.monitors = Some(original);
+                        self.recorder = eposctl::audio::KeepRecording::epos();
                     }
                 }
             }
             (false, Some(original)) => {
+                self.recorder = None;
                 let _ = ch.modify(|s| s.set_mic_meters(original));
                 self.monitors = None;
             }

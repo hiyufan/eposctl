@@ -176,7 +176,7 @@ Frame layout (all u16 little-endian, observed on 23 frames):
 | 0 | report id | `0x01` |
 | 1 | magic | `0xFEEB` |
 | 3 | version? | `0x0001` |
-| 5 | kind | `0x0004` response, `0x010F` notification, `0x0110` link event, `0x01FF` ? |
+| 5 | kind | `0x0004` response, `0x010F` notification, `0x0110` link event, `0x2004` unsupported, `0x3005` not delivered, `0x01FF` ? |
 | 7 | node | `0` before the headset links, `4` after (inferred: "slave" address, 4 = headset) |
 | 9 | body length | bytes |
 | 11 | check | CRC-8 of the body: poly `0x07`, init `0xFF`, no reflection, no final xor (the only fit among all CRC-8 parameter sets, sums and xors tried) |
@@ -201,7 +201,8 @@ service's query burst right after the headset reconnected):
 | `0x0004` | `01` | `14` | `0x0101` | PID number (`parsePIDNumber`), queried on connect |
 | `0x0004` | `06` | `14` | 4 words | Bluetooth address (`parseBDAddr`), queried on connect. Identifies the unit; eposctl redacts it |
 | `0x01FF` | `08` | `F0` | `3, 0…` | unknown, seen once when other headset buttons were pressed |
-| `0x3005` | (request's) | (request's) | none | from node 1 (the dongle) right after each request while the headset was off; probably "not delivered". Whether it also comes while the headset is on is not checked yet |
+| `0x3005` | (request's) | (request's) | none | from node 1 (the dongle) right after each request while the headset was off; never seen while it was linked, so "not delivered" |
+| `0x2004` | (request's) | (request's) | `0, 0` | from the headset for a request it does not support (`0A/17` on the H3PRO) |
 
 The service also logs internal opcode numbers when a write fails (0, 1, 3, 4,
 14, 16, 19, 20, 27); these are enum values inside the service, not wire values.
@@ -240,7 +241,7 @@ Recovered with Ghidra 12.1.4 from `EPOSGamingSuiteService` 1.12.2
 | 20 | `01, 14` | PID number (`parsePIDNumber`) | answered on connect (`0x0101`) |
 | 21 | `08, F0` | no parser | not sent |
 | 22 | `0A, 16` + value | set latency level (inferred: pairs with 23) | not tried |
-| 23 | `0A, 17` | get latency level (`GetLatencyLevel` reads offset 0x13, signed) | no response on H3PRO |
+| 23 | `0A, 17` | get latency level (`GetLatencyLevel` reads offset 0x13, signed) | unsupported on H3PRO (kind `0x2004` reply) |
 | 24 | `06, 32` + value | remote device info (`GetRemoteDeviceInfo`); the value is probably an index, so a query rather than a setter (inferred) | |
 | 25 | `06, 11` | number of link keys, i.e. paired devices (`GetNbrLinkKeys`) | |
 | 26 | `01, 1F` + value | setter; its reply is parsed like 27 (byte at offset 0x11) | not tried |

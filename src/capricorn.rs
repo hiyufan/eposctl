@@ -26,6 +26,13 @@ pub mod kind {
     pub const RESPONSE: u16 = 0x0004;
     pub const NOTIFICATION: u16 = 0x010F;
     pub const LINK: u16 = 0x0110;
+    /// The headset's reply to a request it does not support (observed for `0A/17`
+    /// on the H3PRO: the request's group and command, then zeros).
+    pub const UNSUPPORTED: u16 = 0x2004;
+    /// The dongle's (node 1) immediate reply when the headset is off or out of
+    /// range: the request's group and command (observed; never seen while the
+    /// headset was linked).
+    pub const UNDELIVERED: u16 = 0x3005;
 }
 
 /// CRC-8, polynomial 0x07, init 0xFF, MSB-first, no output xor.

@@ -219,3 +219,91 @@ pub fn exe_of_pid(pid: u32) -> Option<String> {
     let path = String::from_utf16_lossy(&buf[..len as usize]);
     path.rsplit(['\\', '/']).next().map(str::to_lowercase).filter(|n| !n.is_empty())
 }
+
+/// Record from the capture endpoint `id` in shared mode (so the device's APOs
+/// process the signal), calling `on_frames(first_channel_samples, sample_rate)`
+/// for each packet until `keep_going()` returns false. The mix format must be
+/// 32-bit float, which is what Windows uses for shared-mode streams.
+pub fn capture(
+    id: &str,
+    mut keep_going: impl FnMut() -> bool,
+    mut on_frames: impl FnMut(&[f32], u32),
+) -> windows::core::Result<()> {
+    use windows::Win32::Media::Audio::{
+        AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED, IAudioCaptureClient, IAudioClient,
+    };
+    let en = enumerator()?;
+    unsafe {
+        let dev = en.GetDevice(&HSTRING::from(id))?;
+        let client: IAudioClient = dev.Activate(CLSCTX_ALL, None)?;
+        let fmt = client.GetMixFormat()?;
+        let (channels, rate, bits) = ((*fmt).nChannels as usize, (*fmt).nSamplesPerSec, (*fmt).wBitsPerSample);
+        let init = client.Initialize(AUDCLNT_SHAREMODE_SHARED, 0, 10_000_000, 0, fmt, None);
+        CoTaskMemFree(Some(fmt as *const c_void));
+        init?;
+        if bits != 32 || channels == 0 {
+            return Err(windows::core::Error::new(
+                windows::Win32::Foundation::E_NOTIMPL,
+                "mix format is not 32-bit float",
+            ));
+        }
+        let cap: IAudioCaptureClient = client.GetService()?;
+        client.Start()?;
+        let mut mono = Vec::new();
+        while keep_going() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            while cap.GetNextPacketSize()? > 0 {
+                let (mut data, mut frames, mut flags) = (std::ptr::null_mut(), 0u32, 0u32);
+                cap.GetBuffer(&mut data, &mut frames, &mut flags, None, None)?;
+                let samples = std::slice::from_raw_parts(data as *const f32, frames as usize * channels);
+                let silent = flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32 != 0;
+                mono.clear();
+                mono.extend(samples.chunks(channels).map(|f| if silent { 0.0 } else { f[0] }));
+                cap.ReleaseBuffer(frames)?;
+                on_frames(&mono, rate);
+            }
+        }
+        client.Stop()?;
+    }
+    Ok(())
+}
+
+/// Keeps a recording stream open on a microphone and discards the samples.
+/// The EPOS APO only processes the microphone, and so only updates its level
+/// meters, while some program records from it (measured). Stops on drop.
+pub struct KeepRecording {
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl KeepRecording {
+    /// Start on the first active EPOS recording device. `None` if there is none.
+    pub fn epos() -> Option<Self> {
+        let ep = endpoints(Flow::Input).ok()?.into_iter().find(|e| is_epos(&e.name))?;
+        Some(Self::start(ep.id))
+    }
+
+    pub fn start(id: String) -> Self {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let stop = std::sync::Arc::new(AtomicBool::new(false));
+        let flag = stop.clone();
+        let thread = std::thread::Builder::new()
+            .name("keep-recording".into())
+            .spawn(move || {
+                com();
+                // Errors (device unplugged, format) just end the stream; the meters stop.
+                let _ = capture(&id, || !flag.load(Ordering::Relaxed), |_, _| {});
+            })
+            .ok();
+        Self { stop, thread }
+    }
+}
+
+impl Drop for KeepRecording {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
+}

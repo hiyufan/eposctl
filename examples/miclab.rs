@@ -12,12 +12,6 @@
 use std::time::{Duration, Instant};
 
 use eposctl::apo::{ApoChannel, Settings};
-use windows::Win32::Media::Audio::{
-    AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED, IAudioCaptureClient, IAudioClient, IMMDeviceEnumerator,
-    MMDeviceEnumerator,
-};
-use windows::Win32::System::Com::{CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx};
-use windows::core::HSTRING;
 
 type Cond = Vec<(String, f64)>;
 
@@ -71,35 +65,15 @@ fn db(x: f64) -> f64 {
     20.0 * x.max(1e-9).log10()
 }
 
-/// Record `secs` from the endpoint `id` (shared mode, mix format, float32).
+/// Record `secs` from the endpoint `id` (first channel).
 fn record(id: &str, secs: f64) -> windows::core::Result<(Vec<f32>, u32)> {
-    unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        let en: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
-        let dev = en.GetDevice(&HSTRING::from(id))?;
-        let client: IAudioClient = dev.Activate(CLSCTX_ALL, None)?;
-        let fmt = client.GetMixFormat()?;
-        let (ch, rate, bits) = ((*fmt).nChannels as usize, (*fmt).nSamplesPerSec, (*fmt).wBitsPerSample);
-        assert_eq!(bits, 32, "expected a float32 mix format");
-        client.Initialize(AUDCLNT_SHAREMODE_SHARED, 0, 10_000_000, 0, fmt, None)?;
-        let cap: IAudioCaptureClient = client.GetService()?;
-        client.Start()?;
-        let mut out = Vec::new();
-        let end = Instant::now() + Duration::from_secs_f64(secs);
-        while Instant::now() < end {
-            std::thread::sleep(Duration::from_millis(10));
-            while cap.GetNextPacketSize()? > 0 {
-                let (mut data, mut frames, mut flags) = (std::ptr::null_mut(), 0u32, 0u32);
-                cap.GetBuffer(&mut data, &mut frames, &mut flags, None, None)?;
-                let samples = std::slice::from_raw_parts(data as *const f32, frames as usize * ch);
-                let silent = flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32 != 0;
-                out.extend(samples.chunks(ch).map(|f| if silent { 0.0 } else { f[0] }));
-                cap.ReleaseBuffer(frames)?;
-            }
-        }
-        client.Stop()?;
-        Ok((out, rate))
-    }
+    let end = Instant::now() + Duration::from_secs_f64(secs);
+    let (mut out, mut sr) = (Vec::new(), 48000);
+    eposctl::audio::capture(id, || Instant::now() < end, |x, rate| {
+        out.extend_from_slice(x);
+        sr = rate;
+    })?;
+    Ok((out, sr))
 }
 
 fn analyse(x: &[f32], rate: u32) -> Stats {

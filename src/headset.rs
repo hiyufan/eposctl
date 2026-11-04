@@ -106,8 +106,18 @@ impl Headset {
         while let Some(left) = deadline.checked_duration_since(Instant::now()) {
             let Some(report) = self.dev.read(left.as_millis().max(1) as u32)? else { break };
             let Ok(f) = Frame::parse(&report) else { continue };
-            if f.kind == kind::RESPONSE && f.group() == Some(group) && f.command() == Some(command) {
-                return Ok(f);
+            if f.group() == Some(group) && f.command() == Some(command) {
+                match f.kind {
+                    kind::RESPONSE => return Ok(f),
+                    kind::UNDELIVERED => return Err(timeout_err(&format!("{group:#04x}/{command:#04x}"))),
+                    kind::UNSUPPORTED => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::Unsupported,
+                            format!("the headset does not support {group:#04x}/{command:#04x}"),
+                        ));
+                    }
+                    _ => {}
+                }
             }
             self.stash(f);
         }

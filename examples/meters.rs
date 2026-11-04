@@ -5,7 +5,7 @@
 //! The APO only updates the meters while `mic_meters_enabled` is set and a
 //! program is recording, so the flag is switched on for the capture and
 //! restored afterwards (`--reset` clears it if an interrupted run left it on).
-//! Keep a recording app open on the headset mic meanwhile.
+//! A recording stream is held open on the EPOS mic for the same reason.
 
 use std::time::{Duration, Instant};
 
@@ -28,7 +28,9 @@ fn main() -> std::io::Result<()> {
     let original = ch.read()?.mic_meters();
     println!("device {}  meter flag before: {original}", ch.device);
     ch.modify(|s| s.set_mic_meters(true))?;
+    let rec = eposctl::audio::KeepRecording::epos();
     let result = capture(&ch);
+    drop(rec);
     ch.modify(|s| s.set_mic_meters(original))?;
     println!("meter flag restored to {original}");
     result
