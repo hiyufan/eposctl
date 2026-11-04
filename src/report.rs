@@ -12,35 +12,17 @@ use std::time::{Duration, Instant};
 use crate::apo::{self, ApoChannel};
 use crate::capricorn::{Frame, Message};
 use crate::hid::{self, HidDevice, HidInfo};
+use crate::win::{Hive, reg_string};
 
 /// Vendor IDs used by EPOS and by Sennheiser gaming products before the split.
 pub const VENDOR_IDS: [u16; 2] = [0x1395, 0x1377];
 
 fn windows_version() -> String {
-    use windows_sys::Win32::System::Registry::{HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW};
-    let get = |name: &str| -> Option<String> {
-        let key: Vec<u16> = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion".encode_utf16().chain(Some(0)).collect();
-        let val: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
-        let mut buf = [0u16; 256];
-        let mut size = (buf.len() * 2) as u32;
-        let rc = unsafe {
-            RegGetValueW(
-                HKEY_LOCAL_MACHINE,
-                key.as_ptr(),
-                val.as_ptr(),
-                RRF_RT_REG_SZ,
-                std::ptr::null_mut(),
-                buf.as_mut_ptr().cast(),
-                &mut size,
-            )
-        };
-        (rc == 0).then(|| String::from_utf16_lossy(&buf[..(size as usize / 2).saturating_sub(1)]))
+    let get = |name: &str| {
+        reg_string(Hive::LocalMachine, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion", name)
+            .unwrap_or_else(|| "?".into())
     };
-    format!(
-        "build {} ({})",
-        get("CurrentBuild").unwrap_or_else(|| "?".into()),
-        get("DisplayVersion").unwrap_or_else(|| "?".into())
-    )
+    format!("build {} ({})", get("CurrentBuild"), get("DisplayVersion"))
 }
 
 fn hex(b: &[u8]) -> String {

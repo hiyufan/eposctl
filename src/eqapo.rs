@@ -15,6 +15,7 @@ use std::io;
 use std::path::PathBuf;
 
 use crate::peq::Peq;
+use crate::win::{Hive, reg_string};
 
 /// The file eposctl owns inside Equalizer APO's config folder.
 pub const FILE: &str = "eposctl.txt";
@@ -23,26 +24,8 @@ const INCLUDE: &str = "Include: eposctl.txt";
 /// Equalizer APO's config folder (`HKLM\SOFTWARE\EqualizerAPO\ConfigPath`), if
 /// it is installed.
 pub fn config_dir() -> Option<PathBuf> {
-    use windows_sys::Win32::System::Registry::{HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW};
-    let key: Vec<u16> = r"SOFTWARE\EqualizerAPO".encode_utf16().chain(Some(0)).collect();
-    let val: Vec<u16> = "ConfigPath".encode_utf16().chain(Some(0)).collect();
-    let mut buf = [0u16; 1024];
-    let mut size = (buf.len() * 2) as u32;
-    let rc = unsafe {
-        RegGetValueW(
-            HKEY_LOCAL_MACHINE,
-            key.as_ptr(),
-            val.as_ptr(),
-            RRF_RT_REG_SZ,
-            std::ptr::null_mut(),
-            buf.as_mut_ptr().cast(),
-            &mut size,
-        )
-    };
-    if rc != 0 {
-        return None;
-    }
-    let dir = PathBuf::from(String::from_utf16_lossy(&buf[..(size as usize / 2).saturating_sub(1)]));
+    let dir = reg_string(Hive::LocalMachine, r"SOFTWARE\EqualizerAPO", "ConfigPath")?;
+    let dir = PathBuf::from(dir);
     dir.join("config.txt").is_file().then_some(dir)
 }
 

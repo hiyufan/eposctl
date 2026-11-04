@@ -126,6 +126,11 @@ pub fn is_epos(name: &str) -> bool {
     n.contains("epos") || n.contains("sennheiser")
 }
 
+/// The first active EPOS device of a kind, `None` if there is none.
+pub fn epos_endpoint(flow: Flow) -> windows::core::Result<Option<Endpoint>> {
+    Ok(endpoints(flow)?.into_iter().find(|e| is_epos(&e.name)))
+}
+
 /// Find a device by id, or by a case-insensitive part of its name. Errors list
 /// the candidates when the name matches none or several.
 pub fn find(flow: Flow, pattern: &str) -> Result<Endpoint, String> {
@@ -279,7 +284,7 @@ pub struct KeepRecording {
 impl KeepRecording {
     /// Start on the first active EPOS recording device. `None` if there is none.
     pub fn epos() -> Option<Self> {
-        let ep = endpoints(Flow::Input).ok()?.into_iter().find(|e| is_epos(&e.name))?;
+        let ep = epos_endpoint(Flow::Input).ok()??;
         Some(Self::start(ep.id))
     }
 

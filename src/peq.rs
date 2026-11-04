@@ -207,6 +207,15 @@ impl Peq {
         crate::eqfile::fit_range(fit(|f| self.db_at(f)), self.bands.iter().filter(|b| b.on).count())
     }
 
+    /// Largest difference between a 9-band setting and this curve over the
+    /// range the fit covers, as (dB, Hz).
+    pub fn worst_gap(&self, setting: &crate::eqfile::Imported) -> (f64, f64) {
+        (0..=60)
+            .map(|k| 44.2 * (20000.0f64 / 44.2).powf(k as f64 / 60.0))
+            .map(|f| ((epos_db(&setting.gains, f) - setting.shift as f64 - self.db_at(f)).abs(), f))
+            .fold((0.0, 0.0), |a, b| if b.0 > a.0 { b } else { a })
+    }
+
     /// Highest point of the curve over 44 Hz - 20 kHz, in dB (for a preamp).
     pub fn peak_db(&self) -> f64 {
         grid().map(|f| self.db_at(f)).fold(f64::MIN, f64::max)
