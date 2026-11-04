@@ -1,16 +1,25 @@
-﻿; Installer for eposctl (Inno Setup 6.1+ / 7).
+﻿; Installer for eposctl (Inno Setup 6.1+).
 ;
 ;   iscc /DAppVersion=0.3.0 installer\eposctl.iss
 ;
 ; Expects target\release\eposctl-gui.exe and eposctl.exe; writes dist\eposctl-setup.exe.
-; Per-user install, no administrator rights. The EPOS audio driver is not
-; included (it is EPOS's own software); when it is missing, the installer can
-; download Equalizer APO (GPL) from its official SourceForge release instead,
-; checked against a pinned SHA-256, so the EQ still works.
+; Per-user install, no administrator rights.
+;
+; When the EPOS audio driver is missing, it offers to download and run the
+; official EPOS Gaming Suite installer, which carries the driver. That MSI is
+; mirrored unmodified on this project's release "epos-gaming-suite-1.12.2",
+; because EPOS no longer offers it; its licence allows free, unmodified
+; redistribution. As an alternative it offers Equalizer APO (GPL) from its
+; SourceForge release. Both downloads are checked against pinned SHA-256s.
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
+
+#define EposVersion "1.12.2"
+#define EposFile "EPOS-Gaming-Suite-1.12.2.1185.msi"
+#define EposUrl "https://github.com/hiyufan/eposctl/releases/download/epos-gaming-suite-" + EposVersion + "/" + EposFile
+#define EposSha256 "b1634892d5a1c008b2d20d259f36a51ec61751955975031ce67e24cc14e2969e"
 
 #define EqApoVersion "1.4.2"
 #define EqApoFile "EqualizerAPO-x64-" + EqApoVersion + ".exe"
@@ -53,25 +62,30 @@ Name: "chinesesimplified"; MessagesFile: "compiler:Default.isl,ChineseSimplified
 
 [CustomMessages]
 english.AutoStart=Start eposctl with Windows (in the tray)
-english.EqApoTask=Download and install Equalizer APO {#EqApoVersion} (about 12 MB) so the EQ works without the EPOS driver
+english.DriverGroup=EPOS audio driver (needed for EQ, surround, reverb and noise gate):
+english.EposTask=Download and install the official EPOS driver (EPOS Gaming Suite {#EposVersion} installer, about 19 MB; asks for administrator rights)
+english.EqApoTask=Or: download and install Equalizer APO {#EqApoVersion} (open source, about 12 MB) for the EQ only
 english.NoDriverTitle=EPOS audio driver not found
-english.NoDriverText=The EPOS audio driver (EPOS APO) is not installed. It came with the EPOS Gaming Suite, which EPOS no longer offers for download.%n%nWithout it, eposctl still shows the battery and controls sidetone and microphone noise reduction, but the headset's EQ, surround, reverb and noise gate are not available.%n%nIf you still have a Gaming Suite installer, install it, and eposctl will use the driver it adds.%n%nOtherwise, eposctl can send its parametric EQ to Equalizer APO, a free open-source equalizer. Tick it on the next page to download and install it. Its own setup will ask which playback device to use: choose the EPOS headset.
-english.Downloading=Downloading Equalizer APO...
-english.DownloadFailed=Equalizer APO could not be downloaded: %1%n%nYou can get it later from https://sourceforge.net/projects/equalizerapo/
-english.EqApoRunFailed=The Equalizer APO setup did not run (code %1).
+english.NoDriverText=The EPOS audio driver (EPOS APO) is not installed. It comes with the EPOS Gaming Suite, which EPOS no longer offers for download.%n%nWithout it, eposctl still shows the battery and controls sidetone and microphone noise reduction, but the headset's EQ, surround, reverb and noise gate are not available.%n%nOn the next page you can let this setup download the official Gaming Suite installer (signed by EPOS, unmodified, mirrored on eposctl's GitHub) and run it. You accept EPOS's licence in its own setup. Afterwards you can quit the Gaming Suite app; do not uninstall it, since that also removes the driver.%n%nAlternatively, eposctl can send its parametric EQ to Equalizer APO, a free open-source equalizer.
+english.Downloading=Downloading...
+english.DownloadFailed=Download failed: %1%n%neposctl itself is still installed.
+english.RunFailed=%1 did not run (code %2).
 
 chinesesimplified.AutoStart=开机时启动 eposctl（在托盘运行）
-chinesesimplified.EqApoTask=下载并安装 Equalizer APO {#EqApoVersion}（约 12 MB），没有 EPOS 驱动也能用 EQ
+chinesesimplified.DriverGroup=EPOS 音效驱动（均衡器、环绕声、混响、噪声门需要它）：
+chinesesimplified.EposTask=下载并安装 EPOS 官方驱动（EPOS Gaming Suite {#EposVersion} 原版安装包，约 19 MB，需要管理员权限）
+chinesesimplified.EqApoTask=或者：下载并安装 Equalizer APO {#EqApoVersion}（开源，约 12 MB），只提供均衡器
 chinesesimplified.NoDriverTitle=未找到 EPOS 音效驱动
-chinesesimplified.NoDriverText=这台电脑没有安装 EPOS 音效驱动（EPOS APO）。它是随 EPOS Gaming Suite 一起安装的，而 EPOS 已经不再提供 Gaming Suite 的下载。%n%n没有驱动时，eposctl 仍然可以显示电量、调节侧音和麦克风降噪，但耳机的均衡器、环绕声、混响和噪声门无法使用。%n%n如果你手上还有 Gaming Suite 安装包，先装上它，eposctl 会自动使用它带的驱动。%n%n否则，eposctl 可以把参数 EQ 交给 Equalizer APO（免费开源的均衡器）。在下一页勾选即可自动下载安装。它的安装程序会询问要用在哪个播放设备上，请选择 EPOS 耳机。
-chinesesimplified.Downloading=正在下载 Equalizer APO……
-chinesesimplified.DownloadFailed=Equalizer APO 下载失败：%1%n%n之后可以从 https://sourceforge.net/projects/equalizerapo/ 自行下载。
-chinesesimplified.EqApoRunFailed=Equalizer APO 安装程序没有运行（代码 %1）。
+chinesesimplified.NoDriverText=这台电脑没有安装 EPOS 音效驱动（EPOS APO）。它随 EPOS Gaming Suite 一起安装，而 EPOS 已经不再提供下载。%n%n没有驱动时，eposctl 仍然可以显示电量、调节侧音和麦克风降噪，但耳机的均衡器、环绕声、混响和噪声门无法使用。%n%n在下一页可以让本安装程序下载 Gaming Suite 官方安装包（EPOS 签名、未经修改，存放在 eposctl 的 GitHub 上）并运行它。EPOS 的许可协议会在它自己的安装界面里确认。装好后可以退出 Gaming Suite 软件，但不要卸载它，否则驱动也会被删除。%n%n也可以改用 Equalizer APO（免费开源的均衡器），eposctl 的参数 EQ 会通过它生效。
+chinesesimplified.Downloading=正在下载……
+chinesesimplified.DownloadFailed=下载失败：%1%n%neposctl 本身已经正常安装。
+chinesesimplified.RunFailed=%1 没有运行（代码 %2）。
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 Name: "autostart"; Description: "{cm:AutoStart}"
-Name: "eqapo"; Description: "{cm:EqApoTask}"; Check: OfferEqApo
+Name: "eposdriver"; Description: "{cm:EposTask}"; GroupDescription: "{cm:DriverGroup}"; Check: NeedsDriver
+Name: "eqapo"; Description: "{cm:EqApoTask}"; GroupDescription: "{cm:DriverGroup}"; Check: OfferEqApo; Flags: unchecked
 
 [Files]
 Source: "..\target\release\eposctl-gui.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -94,11 +108,11 @@ Filename: "{app}\eposctl-gui.exe"; Description: "{cm:LaunchProgram,eposctl}"; Fl
 [Code]
 var
   DownloadPage: TDownloadWizardPage;
-  EqApoDownloaded: Boolean;
+  EposDownloaded, EqApoDownloaded: Boolean;
 
-function EposDriverPresent: Boolean;
+function NeedsDriver: Boolean;
 begin
-  Result := FileExists(ExpandConstant('{sys}\EAPO.dll'));
+  Result := not FileExists(ExpandConstant('{sys}\EAPO.dll'));
 end;
 
 function EqApoInstalled: Boolean;
@@ -106,52 +120,70 @@ begin
   Result := RegValueExists(HKLM64, 'SOFTWARE\EqualizerAPO', 'ConfigPath');
 end;
 
-{ Offer Equalizer APO only where it is needed and not there yet. }
+{ Offer Equalizer APO only where the EPOS driver is missing and it is not there yet. }
 function OfferEqApo: Boolean;
 begin
-  Result := (not EposDriverPresent) and (not EqApoInstalled);
+  Result := NeedsDriver and (not EqApoInstalled);
 end;
 
 procedure InitializeWizard;
 var
   Info: TOutputMsgWizardPage;
 begin
-  if not EposDriverPresent then
+  if NeedsDriver then
     Info := CreateOutputMsgPage(wpWelcome, CustomMessage('NoDriverTitle'), '', CustomMessage('NoDriverText'));
   DownloadPage := CreateDownloadPage(SetupMessage(msgWizardPreparing), CustomMessage('Downloading'), nil);
+end;
+
+{ Download one file into {tmp}; False (with a message) when it fails. }
+function Fetch(Url, FileName, Sha256: String): Boolean;
+begin
+  Result := False;
+  DownloadPage.Clear;
+  DownloadPage.Add(Url, FileName, Sha256);
+  DownloadPage.Show;
+  try
+    try
+      DownloadPage.Download;
+      Result := True;
+    except
+      { Not fatal: eposctl itself still installs. }
+      SuppressibleMsgBox(FmtMessage(CustomMessage('DownloadFailed'), [GetExceptionMessage]), mbError, MB_OK, IDOK);
+    end;
+  finally
+    DownloadPage.Hide;
+  end;
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  if (CurPageID = wpReady) and WizardIsTaskSelected('eqapo') then
+  if CurPageID = wpReady then
   begin
-    DownloadPage.Clear;
-    DownloadPage.Add('{#EqApoUrl}', '{#EqApoFile}', '{#EqApoSha256}');
-    DownloadPage.Show;
-    try
-      try
-        DownloadPage.Download;
-        EqApoDownloaded := True;
-      except
-        { Not fatal: eposctl itself still installs. }
-        SuppressibleMsgBox(FmtMessage(CustomMessage('DownloadFailed'), [GetExceptionMessage]), mbError, MB_OK, IDOK);
-      end;
-    finally
-      DownloadPage.Hide;
-    end;
+    if WizardIsTaskSelected('eposdriver') then
+      EposDownloaded := Fetch('{#EposUrl}', '{#EposFile}', '{#EposSha256}');
+    if WizardIsTaskSelected('eqapo') then
+      EqApoDownloaded := Fetch('{#EqApoUrl}', '{#EqApoFile}', '{#EqApoSha256}');
   end;
 end;
 
-procedure CurStepChanged(CurStep: TSetupStep);
+{ ShellExec, not Exec: both setups ask for administrator rights. }
+procedure RunSetup(FileName, Params: String);
 var
   Code: Integer;
 begin
-  if (CurStep = ssPostInstall) and EqApoDownloaded then
+  if not ShellExec('', FileName, Params, '', SW_SHOW, ewWaitUntilTerminated, Code) then
+    SuppressibleMsgBox(FmtMessage(CustomMessage('RunFailed'), [FileName, IntToStr(Code)]), mbError, MB_OK, IDOK);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
   begin
-    { ShellExec, not Exec: its setup asks for administrator rights. }
-    if not ShellExec('', ExpandConstant('{tmp}\{#EqApoFile}'), '', '', SW_SHOW, ewWaitUntilTerminated, Code) then
-      SuppressibleMsgBox(FmtMessage(CustomMessage('EqApoRunFailed'), [IntToStr(Code)]), mbError, MB_OK, IDOK);
+    if EposDownloaded then
+      RunSetup('msiexec.exe', '/i "' + ExpandConstant('{tmp}\{#EposFile}') + '"');
+    if EqApoDownloaded then
+      RunSetup(ExpandConstant('{tmp}\{#EqApoFile}'), '');
   end;
 end;
 

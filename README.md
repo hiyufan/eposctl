@@ -72,11 +72,12 @@ directly, so you keep every setting without the old app or its background servic
 2. **The EPOS audio driver** (`EPOS APO`) does the EQ, surround, reverb and noise
    gate. The Gaming Suite installer put it on your system, so if you ever installed
    the Gaming Suite you have it; the Gaming Suite app itself can stay closed or be
-   uninstalled. EPOS no longer offers it for download and eposctl cannot ship it
-   (it is EPOS's software). Without it, the installer offers to set up
+   uninstalled (uninstalling it also removes the driver). EPOS no longer offers
+   it for download, so when the driver is missing the eposctl installer offers to
+   download the [official Gaming Suite installer](https://github.com/hiyufan/eposctl/releases/tag/epos-gaming-suite-1.12.2) (signed by EPOS,
+   unmodified, mirrored here as its licence allows) and run it. Or it can set up
    [Equalizer APO](https://sourceforge.net/projects/equalizerapo/) (open source)
-   and eposctl's parametric EQ uses that instead. Battery, sidetone and mic noise
-   reduction work either way.
+   for the EQ only. Battery, sidetone and mic noise reduction work either way.
 3. **Start eposctl**, with the dongle plugged in and the headset on.
 
 > [!TIP]

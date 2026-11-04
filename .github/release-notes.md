@@ -7,8 +7,8 @@ Or the portable app: **[eposctl-gui.exe](https://github.com/hiyufan/eposctl/rele
 Unofficial, open-source replacement for the discontinued EPOS Gaming Suite on Windows. Tested with the **EPOS H3PRO Hybrid** (USB dongle `1395:0303`).
 开源的 EPOS Gaming Suite 替代品，已在 **EPOS H3PRO Hybrid** 上测试。
 
-**Requirements / 要求:** Windows 10/11 x64. The headset's EQ, surround, reverb and noise gate need the EPOS audio driver, which came with the Gaming Suite installer (the Gaming Suite app itself is not needed). EPOS no longer offers it for download; without it, the installer can set up Equalizer APO (open source) for the EQ instead. Battery, sidetone and mic noise reduction work either way.
-需要 Windows 10/11 64 位。耳机的均衡器、环绕声、混响、噪声门需要 EPOS 音效驱动（随 Gaming Suite 安装包安装，不需要 Gaming Suite 软件本身）。EPOS 已不再提供下载；没有驱动时，安装程序可以帮你装开源的 Equalizer APO 来实现 EQ。电量、侧音、麦克风降噪不需要驱动。
+**Requirements / 要求:** Windows 10/11 x64. The headset's EQ, surround, reverb and noise gate need the EPOS audio driver, which came with the Gaming Suite installer (the Gaming Suite app itself is not needed). EPOS no longer offers it for download; when it is missing, the installer can download the [official, unmodified Gaming Suite installer](https://github.com/hiyufan/eposctl/releases/tag/epos-gaming-suite-1.12.2) and run it, or set up Equalizer APO (open source) for the EQ only. Battery, sidetone and mic noise reduction work either way.
+需要 Windows 10/11 64 位。耳机的均衡器、环绕声、混响、噪声门需要 EPOS 音效驱动（随 Gaming Suite 安装包安装，不需要 Gaming Suite 软件本身）。EPOS 已不再提供下载；缺少驱动时，安装程序可以下载并运行 [Gaming Suite 官方原版安装包](https://github.com/hiyufan/eposctl/releases/tag/epos-gaming-suite-1.12.2)，或者改装开源的 Equalizer APO（只提供均衡器）。电量、侧音、麦克风降噪不需要驱动。
 
 **Files / 文件**
 - `eposctl-setup.exe`: installer / 安装程序

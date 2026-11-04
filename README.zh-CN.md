@@ -69,8 +69,9 @@ eposctl 直接和驱动通信，不用官方软件、也不用它的后台服务
    （或者免安装版 [`eposctl-gui.exe`](https://github.com/hiyufan/eposctl/releases/latest/download/eposctl-gui.exe)）。
 2. **EPOS 音效驱动**（`EPOS APO`）负责均衡器、环绕声、混响和噪声门。它是 Gaming Suite 安装包一起装上的，
    以前装过 Gaming Suite 就有；Gaming Suite 软件本身可以不开，也可以卸载。
-   EPOS 已不再提供下载，而驱动是 EPOS 的软件，eposctl 不能打包分发。没有驱动时，安装程序可以帮你装开源的
-   [Equalizer APO](https://sourceforge.net/projects/equalizerapo/)，eposctl 的参数 EQ 会改用它。
+   （卸载 Gaming Suite 会把驱动一起删掉）。EPOS 已不再提供下载，所以缺少驱动时，eposctl 安装程序可以下载
+   [Gaming Suite 官方安装包](https://github.com/hiyufan/eposctl/releases/tag/epos-gaming-suite-1.12.2)（EPOS 签名、未经修改，按其许可协议转存在这里）并运行它；
+   也可以改装开源的 [Equalizer APO](https://sourceforge.net/projects/equalizerapo/)，只提供均衡器。
    电量、侧音、麦克风降噪不需要驱动。
 3. **启动 eposctl**，插好接收器，打开耳机。
 
