@@ -18,33 +18,22 @@ $ErrorActionPreference = "Stop"
 $exeDir = Split-Path -Parent (Resolve-Path $Exe)
 
 # ---- software OpenGL ----
-# Mesa for Windows (pal1000/mesa-dist-win). Newer packages may not ship the
-# desktop OpenGL driver, so use the newest release, of the MSVC or MinGW
-# build, whose x64 folder has opengl32.dll.
+# Mesa for Windows (pal1000/mesa-dist-win), pinned. Its MSVC package no longer
+# ships the desktop OpenGL driver; the MinGW package does.
+$mesaTag = "26.2.6"
+$mesaAsset = "mesa3d-$mesaTag-release-mingw.7z"
 $mesa = Join-Path $env:RUNNER_TEMP "mesa"
-$tags = gh release list --repo pal1000/mesa-dist-win --limit 40 --json tagName --jq '.[].tagName'
-$gl = $null
-foreach ($tag in $tags) {
-    foreach ($build in "msvc", "mingw") {
-        Remove-Item $mesa -Recurse -Force -ErrorAction SilentlyContinue
-        New-Item -ItemType Directory -Force -Path $mesa | Out-Null
-        gh release download $tag --repo pal1000/mesa-dist-win --pattern "*-release-$build.7z" --dir $mesa 2>$null
-        $archive = Get-ChildItem $mesa -Filter *.7z | Select-Object -First 1
-        if (-not $archive) { continue }
-        & 7z x $archive.FullName "-o$mesa" -y | Out-Null
-        $gl = Get-ChildItem $mesa -Recurse -Filter opengl32.dll |
-            Where-Object { $_.DirectoryName -match 'x64' } | Select-Object -First 1
-        if ($gl) { break }
-        Write-Host "Mesa $tag ($build): no x64 opengl32.dll"
-    }
-    if ($gl) { Write-Host "Mesa ${tag}: using $($archive.Name)"; break }
-}
-if (-not $gl) { throw "no Mesa release with an x64 opengl32.dll" }
+New-Item -ItemType Directory -Force -Path $mesa | Out-Null
+gh release download $mesaTag --repo pal1000/mesa-dist-win --pattern $mesaAsset --dir $mesa --clobber
+if ($LASTEXITCODE) { throw "could not download $mesaAsset" }
+& 7z x (Join-Path $mesa $mesaAsset) "-o$mesa" -y | Out-Null
+if ($LASTEXITCODE) { throw "could not extract $mesaAsset" }
 # Only the WGL driver: an EGL library next to the exe could be picked up instead.
 foreach ($dll in "opengl32.dll", "libgallium_wgl.dll", "libglapi.dll") {
-    $src = Join-Path $gl.DirectoryName $dll
+    $src = Join-Path $mesa "x64\$dll"
     if (Test-Path $src) { Copy-Item $src $exeDir -Force; Write-Host "using $src" }
 }
+if (-not (Test-Path (Join-Path $exeDir "opengl32.dll"))) { throw "no x64\opengl32.dll in $mesaAsset" }
 $env:GALLIUM_DRIVER = "llvmpipe"
 
 # ---- one run per page ----
