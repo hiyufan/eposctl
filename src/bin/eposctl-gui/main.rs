@@ -12,6 +12,7 @@ mod foreground;
 mod hotkeys;
 mod icons;
 mod notify;
+mod peq;
 mod strings;
 mod theme;
 mod tray;
@@ -26,7 +27,7 @@ use eframe::egui::{self, Align, Color32, CornerRadius, Frame, Layout, Margin, Ri
 use eposctl::apo::{ApoChannel, Settings, layout::BANDS};
 use eposctl::presets::{self, Preset};
 
-use config::{AppRule, Config, CustomPreset, Last, Sound};
+use config::{AppRule, Config, CustomPreset, Last, PeqOutput, Sound};
 use hotkeys::{Action, Combo};
 use icons::Icon;
 use strings::{Lang, Strings, t};
@@ -127,6 +128,12 @@ struct App {
     io_msg: Option<(String, bool)>,
     /// Result of the last EQ file import: (microphone EQ, message, ok).
     eq_msg: Option<(bool, String, bool)>,
+    /// The parametric EQ panel is open.
+    peq_open: bool,
+    /// Equalizer APO is installed (checked when the panel opens).
+    eqapo: bool,
+    /// Result of the last parametric EQ file load or Equalizer APO write: (message, ok).
+    peq_msg: Option<(String, bool)>,
 
     /// Headset link state seen last, to act on power on/off.
     last_linked: Option<bool>,
@@ -297,6 +304,9 @@ impl App {
             recording: None,
             io_msg: None,
             eq_msg: None,
+            peq_open: false,
+            eqapo: false,
+            peq_msg: None,
             last_linked: None,
             devices: devswitch::Devices::new(cc.egui_ctx.clone()),
             battery: battery::Tracker::default(),
@@ -308,7 +318,7 @@ impl App {
             hidden: false,
             cfg,
         };
-        // Debug builds: `EPOSCTL_PAGE=mic|device|settings` opens on that page (for screenshots).
+        // Debug builds: `EPOSCTL_PAGE=mic|device|settings|peq` opens on that page (for screenshots).
         #[cfg(debug_assertions)]
         if let Ok(p) = std::env::var("EPOSCTL_PAGE") {
             app.page = match p.as_str() {
@@ -317,6 +327,10 @@ impl App {
                 "settings" => Page::Settings,
                 _ => Page::Sound,
             };
+            if p == "peq" {
+                app.peq_open = true;
+                app.eqapo = eposctl::eqapo::config_dir().is_some();
+            }
         }
         // Debug builds: `EPOSCTL_TEST_TOAST=1` shows a sample low-battery notification.
         #[cfg(debug_assertions)]
@@ -825,6 +839,107 @@ impl App {
         self.eq_msg = Some((mic, msg, ok));
     }
 
+    fn peq_panel(&mut self, ui: &mut Ui) {
+        let s = self.s();
+        let mut cfg = self.cfg.peq.clone();
+        let old_output = cfg.output;
+        let mut changed = peq::Changed::default();
+        let current = self.s.as_ref().map(|x| x.speaker_eq()).unwrap_or_default();
+        widgets::panel().show(ui, |ui| {
+            ui.horizontal(|ui| {
+                widgets::heading(ui, s.peq_title);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if widgets::ghost(ui, s.peq_load).on_hover_text(s.peq_load_tip).clicked()
+                        && let Some(path) = dialog::eq_file()
+                    {
+                        let loaded = std::fs::read_to_string(&path)
+                            .map_err(|e| e.to_string())
+                            .and_then(|t| eposctl::peq::Peq::from_apo_text(&t));
+                        match loaded {
+                            Ok(p) => {
+                                cfg.peq = p;
+                                cfg.peq.bands.truncate(peq::MAX_BANDS);
+                                changed.curve = true;
+                                changed.settled = true;
+                                self.peq_msg = None;
+                            }
+                            Err(e) => self.peq_msg = Some((s.io_failed.replace("{err}", &e), false)),
+                        }
+                    }
+                    ui.add_space(8.0);
+                    let r = widgets::ghost_toggle(ui, s.peq_out_apo, self.eqapo, cfg.output == PeqOutput::EqApo);
+                    let r = if self.eqapo { r } else { r.on_disabled_hover_text(s.peq_apo_missing) };
+                    if r.clicked() && self.eqapo {
+                        cfg.output = PeqOutput::EqApo;
+                    }
+                    if widgets::ghost_toggle(ui, s.peq_out_epos, true, cfg.output == PeqOutput::Epos).clicked() {
+                        cfg.output = PeqOutput::Epos;
+                    }
+                });
+            });
+            widgets::desc(ui, s.peq_desc);
+            ui.add_space(6.0);
+            let achieved = (cfg.output == PeqOutput::Epos).then_some(current);
+            let c = peq::plot(ui, &mut cfg.peq, achieved.as_ref(), 220.0);
+            changed.curve |= c.curve;
+            changed.settled |= c.settled;
+            if cfg.peq.bands.is_empty() {
+                widgets::desc(ui, s.peq_empty);
+            } else if cfg.output == PeqOutput::Epos {
+                let shift = cfg.peq.to_epos().shift;
+                let (db, hz) = peq::worst_gap(&cfg.peq, &current, shift);
+                let hz = if hz >= 1000.0 { format!("{:.1} kHz", hz / 1000.0) } else { format!("{hz:.0} Hz") };
+                widgets::desc(ui, &s.peq_fit_note.replace("{db}", &format!("{db:.1}")).replace("{hz}", &hz));
+            } else {
+                widgets::desc(ui, s.peq_apo_note);
+            }
+            ui.add_space(8.0);
+            let c = peq::table(ui, s, &mut cfg.peq);
+            changed.curve |= c.curve;
+            changed.settled |= c.settled;
+            if cfg.output == PeqOutput::EqApo {
+                ui.add_space(4.0);
+                if widgets::ghost(ui, s.peq_apo_off).clicked() {
+                    match epos_render_word().map(|w| eposctl::eqapo::write(None, &w)) {
+                        Some(Ok(_)) => self.peq_msg = None,
+                        Some(Err(e)) => self.peq_msg = Some((s.io_failed.replace("{err}", &e.to_string()), false)),
+                        None => {}
+                    }
+                    cfg.output = PeqOutput::Epos;
+                }
+            }
+            if let Some((m, ok)) = &self.peq_msg {
+                ui.label(RichText::new(m).font(theme::font(12.5)).color(if *ok { ACCENT } else { DANGER }));
+            }
+        });
+
+        let switched = cfg.output != old_output;
+        if changed.curve || changed.settled || switched {
+            self.cfg.peq = cfg.clone();
+            self.mark_dirty();
+        }
+        match cfg.output {
+            PeqOutput::Epos if changed.curve || switched => {
+                let g = cfg.peq.to_epos().gains;
+                self.apply(|st| st.set_speaker_eq(&g));
+            }
+            PeqOutput::EqApo if changed.settled || switched => {
+                let res = epos_render_word()
+                    .ok_or_else(|| "no EPOS playback device".to_string())
+                    .and_then(|w| eposctl::eqapo::write(Some(&cfg.peq), &w).map_err(|e| e.to_string()));
+                match res {
+                    Ok(_) => {
+                        self.peq_msg = None;
+                        // Otherwise the headset's own EQ would apply on top.
+                        self.apply(|st| st.set_speaker_eq(&[0.0; BANDS]));
+                    }
+                    Err(e) => self.peq_msg = Some((s.io_failed.replace("{err}", &e), false)),
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn eq_msg_line(&self, ui: &mut Ui, mic: bool) {
         if let Some((m, msg, ok)) = &self.eq_msg
             && *m == mic
@@ -1221,6 +1336,12 @@ impl App {
                     if widgets::ghost_toggle(ui, s.import, !comparing, false).on_hover_text(s.eq_import_tip).clicked() {
                         self.import_eq(false);
                     }
+                    if widgets::ghost_toggle(ui, s.peq_button, !comparing, self.peq_open).clicked() {
+                        self.peq_open = !self.peq_open;
+                        if self.peq_open {
+                            self.eqapo = eposctl::eqapo::config_dir().is_some();
+                        }
+                    }
                     let can_undo = !self.undo.is_empty() && !comparing;
                     if widgets::ghost_toggle(ui, s.undo, can_undo, false).on_hover_text(s.undo_tip).clicked() {
                         self.undo();
@@ -1253,6 +1374,10 @@ impl App {
             widgets::desc(ui, s.eq_hint);
         });
         ui.add_space(12.0);
+        if self.peq_open && self.comparing.is_none() {
+            self.peq_panel(ui);
+            ui.add_space(12.0);
+        }
 
         // Surround, with reverb beneath it because it only works with surround on.
         let editable = self.comparing.is_none();
@@ -1851,6 +1976,13 @@ fn debug_screenshot(ctx: &egui::Context) {
         })));
     }
     ctx.request_repaint();
+}
+
+/// The `Device:` word for Equalizer APO that selects the EPOS playback device.
+fn epos_render_word() -> Option<String> {
+    use eposctl::audio::{Flow, endpoints, is_epos};
+    let ep = endpoints(Flow::Output).ok()?.into_iter().find(|e| is_epos(&e.name))?;
+    eposctl::eqapo::device_word(&ep.id)
 }
 
 /// Named event shared by all instances. A second launch signals it and exits;

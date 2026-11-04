@@ -181,6 +181,24 @@ impl Hotkeys {
     }
 }
 
+/// Where the parametric EQ goes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PeqOutput {
+    /// Fitted to the headset's own 9-band EQ.
+    #[default]
+    Epos,
+    /// Written exactly to Equalizer APO (the headset's EQ is set flat).
+    EqApo,
+}
+
+/// The parametric EQ editor's bands and output.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PeqConfig {
+    pub peq: eposctl::peq::Peq,
+    pub output: PeqOutput,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -195,6 +213,7 @@ pub struct Config {
     pub hotkeys: Hotkeys,
     pub device_switch: DeviceSwitch,
     pub chat_mix: ChatMix,
+    pub peq: PeqConfig,
     pub last: Last,
 }
 
@@ -211,6 +230,7 @@ impl Default for Config {
             hotkeys: Hotkeys::default(),
             device_switch: DeviceSwitch::default(),
             chat_mix: ChatMix::default(),
+            peq: PeqConfig::default(),
             last: Last::default(),
         }
     }
