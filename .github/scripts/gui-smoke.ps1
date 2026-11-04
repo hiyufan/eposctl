@@ -18,22 +18,29 @@ $ErrorActionPreference = "Stop"
 $exeDir = Split-Path -Parent (Resolve-Path $Exe)
 
 # ---- software OpenGL ----
+# Mesa for Windows (pal1000/mesa-dist-win). Newer packages may not ship the
+# desktop OpenGL driver, so use the newest release, of the MSVC or MinGW
+# build, whose x64 folder has opengl32.dll.
 $mesa = Join-Path $env:RUNNER_TEMP "mesa"
-New-Item -ItemType Directory -Force -Path $mesa | Out-Null
-$tag = gh release view --repo pal1000/mesa-dist-win --json tagName --jq .tagName
-Write-Host "Mesa for Windows $tag"
-gh release download $tag --repo pal1000/mesa-dist-win --pattern "*-release-msvc.7z" --dir $mesa --clobber
-$archive = Get-ChildItem $mesa -Filter *.7z | Select-Object -First 1
-& 7z x $archive.FullName "-o$mesa" -y | Out-Null
-if ($LASTEXITCODE) { throw "could not extract $($archive.Name)" }
-# Only the WGL driver: an EGL library next to the exe could be picked up instead.
-# The archive layout changes between releases, so look for the x64 build.
-$gl = Get-ChildItem $mesa -Recurse -Filter opengl32.dll | Where-Object { $_.DirectoryName -match 'x64' } |
-    Select-Object -First 1
-if (-not $gl) {
-    Get-ChildItem $mesa -Recurse -Filter *.dll | ForEach-Object { Write-Host $_.FullName }
-    throw "no x64 opengl32.dll in $($archive.Name)"
+$tags = gh release list --repo pal1000/mesa-dist-win --limit 40 --json tagName --jq '.[].tagName'
+$gl = $null
+foreach ($tag in $tags) {
+    foreach ($build in "msvc", "mingw") {
+        Remove-Item $mesa -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Force -Path $mesa | Out-Null
+        gh release download $tag --repo pal1000/mesa-dist-win --pattern "*-release-$build.7z" --dir $mesa 2>$null
+        $archive = Get-ChildItem $mesa -Filter *.7z | Select-Object -First 1
+        if (-not $archive) { continue }
+        & 7z x $archive.FullName "-o$mesa" -y | Out-Null
+        $gl = Get-ChildItem $mesa -Recurse -Filter opengl32.dll |
+            Where-Object { $_.DirectoryName -match 'x64' } | Select-Object -First 1
+        if ($gl) { break }
+        Write-Host "Mesa $tag ($build): no x64 opengl32.dll"
+    }
+    if ($gl) { Write-Host "Mesa $tag: using $($archive.Name)"; break }
 }
+if (-not $gl) { throw "no Mesa release with an x64 opengl32.dll" }
+# Only the WGL driver: an EGL library next to the exe could be picked up instead.
 foreach ($dll in "opengl32.dll", "libgallium_wgl.dll", "libglapi.dll") {
     $src = Join-Path $gl.DirectoryName $dll
     if (Test-Path $src) { Copy-Item $src $exeDir -Force; Write-Host "using $src" }
