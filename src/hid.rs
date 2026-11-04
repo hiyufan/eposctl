@@ -22,6 +22,8 @@ use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED
 use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 use windows_sys::core::GUID;
 
+use crate::win::wide;
+
 pub const EPOS_VID: u16 = 0x1395;
 pub const VENDOR_USAGE_PAGE: u16 = 0xFFFF;
 
@@ -36,10 +38,6 @@ pub struct HidInfo {
     pub output_len: u16,
     /// USB product string, if the device reports one.
     pub product: Option<String>,
-}
-
-fn wide(s: &str) -> Vec<u16> {
-    s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 unsafe fn open_path(path: &str, access: u32) -> HANDLE {

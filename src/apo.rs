@@ -23,6 +23,7 @@ use windows_sys::Win32::System::Memory::{
 use windows_sys::Win32::System::Threading::{OpenEventW, OpenMutexW, ReleaseMutex, SetEvent, WaitForSingleObject};
 
 use crate::objdir;
+use crate::win::wide;
 
 /// Fixed prefix of every EPOS APO kernel object name.
 pub const OBJECT_GUID: &str = "CF4B411F-BE2B-4D84-8106-EC27CA0F8F05";
@@ -310,10 +311,6 @@ fn strip_prefix_ci<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
     } else {
         None
     }
-}
-
-fn wide(s: &str) -> Vec<u16> {
-    s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 struct OwnedHandle(HANDLE);
