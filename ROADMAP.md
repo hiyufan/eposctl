@@ -75,7 +75,8 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
 
 ## Later
 
-- More EPOS models, driven by device reports
+- [x] GSP 370: battery and sidetone over the dongle's serial port (experimental, untested)
+- [ ] Confirm the GSP 370 with an owner; more EPOS models, driven by device reports
 
 ## Not planned
 

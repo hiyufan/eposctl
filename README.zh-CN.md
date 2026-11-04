@@ -86,7 +86,8 @@ eposctl 直接和驱动通信，不用官方软件、也不用它的后台服务
 | 耳机 | 状态 |
 |---|---|
 | EPOS H3PRO Hybrid（USB 接收器 `1395:0303`） | 已测试，全部功能可用 |
-| 其他 EPOS 游戏耳机 | 未测试，欢迎[提交设备报告](https://github.com/hiyufan/eposctl/issues/new?template=device-report.yml) |
+| EPOS / 森海塞尔 GSP 370（接收器 `1395:009A`） | 实验性，未实测：通过接收器串口读电量、调侧音；均衡器和环绕声通过 EPOS 驱动 |
+| 其他装有 EPOS 驱动的设备（GSP 600 系列、GSX、H3 / H6PRO 等） | 未测试。均衡器、环绕声、混响、噪声门由驱动处理，应该可用；耳机自身的设置不一定。欢迎[提交设备报告](https://github.com/hiyufan/eposctl/issues/new?template=device-report.yml) |
 
 手上有别的型号？运行 `eposctl report --query`，把输出贴到
 [设备报告](https://github.com/hiyufan/eposctl/issues/new?template=device-report.yml)里。

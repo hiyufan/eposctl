@@ -91,7 +91,8 @@ directly, so you keep every setting without the old app or its background servic
 | Headset | Status |
 |---|---|
 | EPOS H3PRO Hybrid (USB dongle `1395:0303`) | Tested, all features work |
-| Other EPOS gaming headsets | Untested. [Send a device report](https://github.com/hiyufan/eposctl/issues/new?template=device-report.yml) |
+| EPOS / Sennheiser GSP 370 (dongle `1395:009A`) | Experimental, untested: battery and sidetone over the dongle's serial port; EQ and surround through the EPOS driver |
+| Other EPOS devices with the EPOS driver (GSP 600 series, GSX, H3 / H6PRO…) | Untested. EQ, surround, reverb and noise gate go through the driver, so they should work; headset settings may not. [Send a device report](https://github.com/hiyufan/eposctl/issues/new?template=device-report.yml) |
 
 Have another model? Run `eposctl report --query` and attach the output to a
 [device report](https://github.com/hiyufan/eposctl/issues/new?template=device-report.yml).

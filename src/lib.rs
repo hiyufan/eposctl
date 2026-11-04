@@ -9,6 +9,7 @@ pub mod audio;
 pub mod capricorn;
 pub mod eqapo;
 pub mod eqfile;
+pub mod gsp370;
 pub mod headset;
 pub mod hid;
 pub mod objdir;

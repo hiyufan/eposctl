@@ -332,6 +332,37 @@ microphone open. eposctl's request is byte-identical to the official one (the
 capture shows only the `0A/0B` acknowledgement per slider move), so the cause is
 on the device side and is not known.
 
+## GSP 370 (dongle `1395:009A`)
+
+A different protocol from the H3PRO's. The dongle's HID interface (3) only
+carries media keys; settings go over its CDC ACM serial interface (4, a COM
+port on Windows) at 921600 baud, in packets framed like Bluetooth HCI vendor
+commands:
+
+```
+command: 01 <op> FC <param len> <params...>
+reply:   04 0E <len> 01 <op> FC <status> <values...>
+```
+
+| Op | Params | Use |
+|---|---|---|
+| `9C` | | battery percent |
+| `A0` | | sent before setting a non-zero sidetone |
+| `A1` | | sent before setting sidetone 0 |
+| `A2` | level | sidetone: `0` off, else `6`..`16` |
+
+Status `00` = ok, `0C` = headset off. Unrelated events (`04 E9 00`, `04 E8
+00`) can arrive in between. Source: captures of the official software by GSP
+370 owners (HeadsetControl issue #619); eposctl implements it in
+`src/gsp370.rs` but it has not been tested on a GSP 370 here. The official
+service's other device family, `QtilSecomParser` (HID reports; battery,
+charging, sidetone, noise reduction, auto power off, voice prompts, wearing
+detection, ANC), belongs to its Bluetooth products and is not implemented.
+
+The EPOS driver's package lists these product IDs (`drvtoolw` in the Gaming
+Suite MSI): `0089 008A 0098 009A 009E 009F 0101 0102 0300 0301 0303 8089
+808A`. eposctl's driver channel is per VID/PID and not limited to the H3PRO.
+
 ## Not in this channel
 
 - **Sidetone**: moving the slider changed nothing in the block (observed). It goes to the dongle over HID (see above).

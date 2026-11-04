@@ -72,7 +72,7 @@ pub enum Cmd {
     Surround { state: OnOff },
     /// Show headset info read over HID: name, serial, firmware, battery, sidetone
     Info,
-    /// Show or set sidetone level
+    /// Show or set sidetone level (H3PRO: raw 0-255, 255 = quietest; GSP 370: 0-255 loudness, 0 = off)
     Sidetone { level: Option<u16> },
     /// Show or set the headset's microphone noise reduction: 0 off, 1 medium, 2 strong
     #[command(alias = "nr")]

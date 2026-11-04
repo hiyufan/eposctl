@@ -86,3 +86,39 @@ pub fn set_reg_binary(hive: Hive, key: &str, value: &str, data: &[u8]) -> std::i
     };
     if rc == 0 { Ok(()) } else { Err(std::io::Error::from_raw_os_error(rc as i32)) }
 }
+
+/// Names of the subkeys of `key` (empty if it cannot be opened).
+pub fn reg_subkeys(hive: Hive, key: &str) -> Vec<String> {
+    use windows_sys::Win32::System::Registry::{HKEY, KEY_READ, RegCloseKey, RegEnumKeyExW, RegOpenKeyExW};
+    let key = wide(key);
+    let mut h: HKEY = std::ptr::null_mut();
+    // SAFETY: `key` is NUL-terminated and outlives the call; `h` is written on success.
+    if unsafe { RegOpenKeyExW(hive.handle(), key.as_ptr(), 0, KEY_READ, &mut h) } != 0 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for i in 0.. {
+        let mut name = [0u16; 256];
+        let mut len = name.len() as u32;
+        // SAFETY: `h` is open; `name` is writable for `len` characters.
+        let rc = unsafe {
+            RegEnumKeyExW(
+                h,
+                i,
+                name.as_mut_ptr(),
+                &mut len,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        if rc != 0 {
+            break;
+        }
+        out.push(String::from_utf16_lossy(&name[..len as usize]));
+    }
+    // SAFETY: `h` was opened above and is closed once.
+    unsafe { RegCloseKey(h) };
+    out
+}

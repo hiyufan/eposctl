@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use eposctl::capricorn::Message;
+use eposctl::gsp370::{self, Gsp370};
 use eposctl::headset::Headset;
 
 #[derive(Clone, Debug, Default)]
@@ -57,6 +58,14 @@ fn run(state: Shared, rx: Receiver<Cmd>, wake: impl Fn()) {
     let ctx = Ctx { state, wake };
     loop {
         let Ok(h) = Headset::open() else {
+            // No H3PRO-style settings interface: maybe a GSP 370 (serial port).
+            if let Ok(g) = Gsp370::open() {
+                ctx.update(|s| s.dongle = true);
+                if gsp_session(&g, &ctx, &rx).is_ok() {
+                    return; // UI went away
+                }
+                drop(g);
+            }
             ctx.update(|s| *s = DevState::default());
             match rx.recv_timeout(RECONNECT_EVERY) {
                 Err(RecvTimeoutError::Disconnected) => return,
@@ -165,6 +174,39 @@ fn session(h: &Headset, ctx: &Ctx<impl Fn()>, rx: &Receiver<Cmd>) -> io::Result<
         if on_message(ctx, frame.decode()) {
             requery_at = Some(Instant::now() + Duration::from_millis(1500));
         }
+    }
+}
+
+/// Talk to a GSP 370 dongle until it fails (`Err`) or the UI goes away (`Ok`).
+/// Battery is polled (every minute while linked, every few seconds while not,
+/// so a headset switched on shows up soon); sidetone can be set but not read
+/// back, so the UI shows the last value set.
+fn gsp_session(g: &Gsp370, ctx: &Ctx<impl Fn()>, rx: &Receiver<Cmd>) -> io::Result<()> {
+    let mut next_poll = Instant::now();
+    loop {
+        let Some(p) = drain(rx) else { return Ok(()) };
+        if let Some(raw) = p.sidetone {
+            // The UI's raw scale is the H3PRO's: 0xFF quietest, 0 loudest.
+            let level = gsp370::sidetone_level(f32::from(255 - raw.min(255)) / 255.0);
+            if g.set_sidetone(level).is_ok() {
+                ctx.update(|s| s.sidetone = Some(raw));
+            }
+        }
+        if p.refresh || Instant::now() >= next_poll {
+            let b = g.battery();
+            let linked = !timed_out(&b);
+            let battery = if linked { Some(b?) } else { None };
+            next_poll = Instant::now() + if linked { BATTERY_EVERY } else { RECONNECT_EVERY * 2 };
+            ctx.update(|s| {
+                s.linked = Some(linked);
+                s.product = Some("EPOS GSP 370".into());
+                s.battery = battery;
+                if linked && s.sidetone.is_none() {
+                    s.sidetone = Some(0xFF); // unknown; shown as off until set
+                }
+            });
+        }
+        std::thread::sleep(Duration::from_millis(150));
     }
 }
 
