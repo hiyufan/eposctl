@@ -112,8 +112,23 @@ their last value (observed). With them set:
 to its EQ together with the sample rate, a sample-rate dependent coefficient
 table (one for 48 kHz, one for other rates) and the constants `1.5` and `0.95`
 (EQ setup at RVA `0x2B11D3`). It is the only 9-entry frequency table in the
-DLL, so these are taken as the band centres of both EQs (inferred). `1.5` is
-probably the bands' Q and `0.95` a level factor; not confirmed.
+DLL, so these are taken as the band centres of both EQs (inferred).
+
+The coefficient tables are 9x9 matrices of doubles, built by static initialisers
+(48 kHz: RVA `0x2581E0`, other rates: RVA `0x258550`). Inverted, the 48 kHz one has
+a unit diagonal and symmetric off-diagonals of 0.3315, 0.0742, 0.0179, 0.0044 for
+bands one to four octaves apart. It is the interaction matrix of an "accurate
+graphic equalizer" (Valimaki & Liski 2017): the APO solves it so that the
+response **at each band centre equals the gain set for that band**, compensating
+the overlap of neighbouring band filters, and is smooth in between. So:
+
+- No curve with more detail than nine octave-spaced points can be produced by
+  this EQ. A parametric EQ with more bands has to be reduced to its values at the
+  nine centres, which is what `eposctl eq-import` does.
+- Each band reaches about a third of its gain one octave away. An RBJ peaking
+  filter of about 1.24 octaves bandwidth comes close (0.31 / 0.08 vs 0.33 / 0.07);
+  the exact filter type was not identified. `1.5` and `0.95` are parameters of
+  the EQ object (meaning not confirmed).
 
 Setting names found in both binaries (offsets in the table above):
 `direct_sound_enabled`, `speaker_eq_enabled`, `speaker_eq_levels`,

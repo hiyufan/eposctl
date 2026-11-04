@@ -4,11 +4,13 @@
 //! builds exactly this table of nine floats and hands it to its EQ together with
 //! the sample rate (static analysis of the 2023 driver; not measured).
 //!
-//! An imported curve is read off at those nine frequencies. Parametric filters are
-//! evaluated as the biquads Equalizer APO uses (RBJ cookbook at 48 kHz), graphic
-//! points are interpolated on a log-frequency axis. The overall level (preamp)
-//! does not matter for the shape, so the result is shifted to fit the -6..+6 dB
-//! range of the headset and only clipped when the curve is taller than 12 dB.
+//! Parametric filters are evaluated as the biquads Equalizer APO uses (RBJ
+//! cookbook at 48 kHz), graphic points are interpolated on a log-frequency axis.
+//! The nine band gains are then the least-squares fit of the headset EQ's
+//! modelled curve to that target over 44 Hz - 20 kHz (`crate::peq::fit`). The
+//! overall level (preamp) does not matter for the shape, so the result is
+//! shifted to fit the -6..+6 dB range of the headset and only clipped when the
+//! curve is taller than 12 dB.
 
 use std::f64::consts::PI;
 
@@ -31,8 +33,9 @@ pub fn band_freq(i: usize) -> String {
 
 const FS: f64 = 48_000.0;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Kind {
+/// Equalizer APO filter types.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Kind {
     Peak,
     LowShelf,
     HighShelf,
@@ -42,17 +45,38 @@ enum Kind {
     AllPass,
 }
 
+/// One parametric filter, as on an Equalizer APO `Filter:` line.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Filter {
-    kind: Kind,
-    fc: f64,
-    gain: f64,
-    q: f64,
+pub struct Filter {
+    pub kind: Kind,
+    pub fc: f64,
+    pub gain: f64,
+    pub q: f64,
+}
+
+impl Kind {
+    /// The type keyword in Equalizer APO's `Filter:` syntax.
+    pub fn apo_name(self) -> &'static str {
+        match self {
+            Kind::Peak => "PK",
+            Kind::LowShelf => "LSC",
+            Kind::HighShelf => "HSC",
+            Kind::LowPass => "LPQ",
+            Kind::HighPass => "HPQ",
+            Kind::Notch => "NO",
+            Kind::AllPass => "AP",
+        }
+    }
+
+    /// Whether the filter has a gain parameter.
+    pub fn has_gain(self) -> bool {
+        matches!(self, Kind::Peak | Kind::LowShelf | Kind::HighShelf)
+    }
 }
 
 impl Filter {
     /// Gain in dB at `f` Hz.
-    fn db_at(&self, f: f64) -> f64 {
+    pub fn db_at(&self, f: f64) -> f64 {
         let w0 = 2.0 * PI * self.fc.clamp(1.0, FS / 2.0 - 1.0) / FS;
         let (sin, cos) = w0.sin_cos();
         let alpha = sin / (2.0 * self.q.max(0.01));
@@ -122,10 +146,12 @@ pub fn parse(text: &str) -> Result<Imported, String> {
     if used == 0 {
         return Err("no Equalizer APO filters, GraphicEQ points or AutoEQ columns found".into());
     }
-    Ok(fit(raw, used))
+    Ok(fit_range(raw, used))
 }
 
-fn fit(raw: [f64; BANDS], used: usize) -> Imported {
+/// Shift raw band gains into the headset's range (clipping only what still
+/// does not fit) and round them to 0.1 dB.
+pub fn fit_range(raw: [f64; BANDS], used: usize) -> Imported {
     let (min, max) = raw.iter().fold((f64::MAX, f64::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
     let (lo, hi) = (EQ_MIN_DB as f64, EQ_MAX_DB as f64);
     let shift = if max - min > hi - lo {
@@ -171,11 +197,13 @@ fn parse_csv(text: &str) -> Result<([f64; BANDS], usize), String> {
         }
     }
     let n = points.len();
-    Ok((graphic(&mut points), n))
+    let points = sorted(points);
+    Ok((crate::peq::fit(|f| interp(&points, f)), n))
 }
 
 fn parse_apo(text: &str) -> Result<([f64; BANDS], usize), String> {
-    let mut total = [0.0f64; BANDS];
+    let mut filters = Vec::new();
+    let mut graphics: Vec<Vec<(f64, f64)>> = Vec::new();
     let mut used = 0;
     for line in text.lines() {
         let line = line.split('#').next().unwrap_or("").trim();
@@ -192,19 +220,38 @@ fn parse_apo(text: &str) -> Result<([f64; BANDS], usize), String> {
                 }
             }
             used += points.len();
-            for (t, v) in total.iter_mut().zip(graphic(&mut points)) {
-                *t += v;
-            }
+            graphics.push(sorted(points));
         } else if (cmd == "filter" || cmd.starts_with("filter "))
             && let Some(f) = filter(rest)?
         {
             used += 1;
-            for (t, &c) in total.iter_mut().zip(&CENTRES_HZ) {
-                *t += f.db_at(c as f64);
-            }
+            filters.push(f);
         }
     }
-    Ok((total, used))
+    let target = |f: f64| {
+        filters.iter().map(|x| x.db_at(f)).sum::<f64>() + graphics.iter().map(|g| interp(g, f)).sum::<f64>()
+    };
+    Ok((crate::peq::fit(target), used))
+}
+
+/// The `Preamp:` value (summed) and the active `Filter:` lines of an Equalizer
+/// APO config. `GraphicEQ:` lines are not filters and are left out.
+pub fn parse_filters(text: &str) -> Result<(f64, Vec<Filter>), String> {
+    let mut preamp = 0.0;
+    let mut out = Vec::new();
+    for line in text.trim_start_matches('\u{feff}').lines() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        let Some((cmd, rest)) = line.split_once(':') else { continue };
+        let cmd = cmd.trim().to_ascii_lowercase();
+        if cmd == "preamp" {
+            preamp += rest.split_whitespace().next().and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
+        } else if (cmd == "filter" || cmd.starts_with("filter "))
+            && let Some(f) = filter(rest)?
+        {
+            out.push(f);
+        }
+    }
+    Ok((preamp, out))
 }
 
 /// One `Filter:` line after the colon. `Ok(None)` for a filter that is off.
@@ -252,31 +299,30 @@ fn filter(rest: &str) -> Result<Option<Filter>, String> {
     Ok(Some(Filter { kind, fc, gain, q }))
 }
 
-/// Values of a graphic curve at the band centres, interpolated on log frequency.
-fn graphic(points: &mut Vec<(f64, f64)>) -> [f64; BANDS] {
+/// Valid graphic points, sorted by frequency.
+fn sorted(mut points: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
     points.retain(|(f, g)| *f > 0.0 && f.is_finite() && g.is_finite());
     points.sort_by(|a, b| a.0.total_cmp(&b.0));
-    CENTRES_HZ.map(|c| {
-        let c = c as f64;
-        match points.iter().position(|(f, _)| *f >= c) {
-            None => points.last().map_or(0.0, |p| p.1),
-            Some(0) => points[0].1,
-            Some(k) => {
-                let ((f0, g0), (f1, g1)) = (points[k - 1], points[k]);
-                let t = (c.ln() - f0.ln()) / (f1.ln() - f0.ln());
-                g0 + (g1 - g0) * t
-            }
+    points
+}
+
+/// A graphic curve's value at `c` Hz, interpolated on log frequency and held
+/// flat beyond its ends.
+fn interp(points: &[(f64, f64)], c: f64) -> f64 {
+    match points.iter().position(|(f, _)| *f >= c) {
+        None => points.last().map_or(0.0, |p| p.1),
+        Some(0) => points[0].1,
+        Some(k) => {
+            let ((f0, g0), (f1, g1)) = (points[k - 1], points[k]);
+            let t = (c.ln() - f0.ln()) / (f1.ln() - f0.ln());
+            g0 + (g1 - g0) * t
         }
-    })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn close(a: f32, b: f32) -> bool {
-        (a - b).abs() <= 0.15
-    }
 
     #[test]
     fn peak_filter_hits_its_band() {
@@ -303,9 +349,11 @@ mod tests {
                     # a comment\n";
         let r = parse(text).unwrap();
         assert_eq!(r.used, 2);
-        assert_eq!(r.shift, 0.0);
+        // The least-squares fit may overshoot the 5 dB shelf slightly at the low end.
+        assert!(r.shift.abs() <= 0.5, "{r:?}");
         assert!(r.gains[0] > 3.0, "{:?}", r.gains);
-        assert!(close(r.gains[4], 3.0), "{:?}", r.gains);
+        // Q 1.41 is narrower than a headset band, so the fit lands a little under 3 dB.
+        assert!((r.gains[4] - 3.0).abs() < 0.3, "{:?}", r.gains);
         assert!(r.gains[8].abs() < 0.2, "{:?}", r.gains);
     }
 
@@ -316,15 +364,18 @@ mod tests {
         let r = parse(text).unwrap();
         assert_eq!(r.used, 6);
         assert!(r.clipped);
-        assert_eq!(r.shift, -1.0);
+        assert!((-2.0..=-0.5).contains(&r.shift), "{r:?}");
         assert_eq!(r.gains[0], 6.0);
-        assert_eq!(r.gains[2], -1.0);
+        // 250 Hz sits on the 0 dB plateau, pulled down a little by the -8 dB step
+        // one octave above it.
+        assert!((-3.0..=-0.5).contains(&r.gains[2]), "{r:?}");
         assert_eq!(r.gains[8], -6.0);
         // 250 Hz lies between 125 and 500 at 0 dB.
         let r = parse("GraphicEQ: 100 -2; 1000 -8").unwrap();
         assert!(!r.clipped);
-        assert_eq!(r.shift, 2.0); // -8 -> -6
-        assert_eq!(r.gains[0], 0.0);
+        // -8 -> -6, plus a little for the fit's overshoot at the step.
+        assert!((2.0..=2.6).contains(&r.shift), "{r:?}");
+        assert!((r.gains[0] - r.shift).abs() < 2.6, "{r:?}");
         assert_eq!(r.gains[8], -6.0);
     }
 

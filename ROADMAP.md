@@ -49,8 +49,10 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
       Likely candidates: auto power-off timer, prompt volume, mute tone, ANC control.
 - [x] Centre frequencies of the 9 EQ bands (62.5 Hz to 16 kHz, octaves; from `EAPO.dll`),
       and AutoEQ / Equalizer APO import
-- [ ] Filter shape of the bands (`EAPO.dll` passes 1.5 and 0.95 to its EQ; probably Q and
-      a level factor), to fit imported curves exactly instead of sampling them
+- [x] How the bands interact (the APO's 9x9 interaction matrix, from `EAPO.dll`), so imported
+      curves are least-squares fitted instead of sampled at the centres
+- [x] Parametric EQs with more bands than nine: exact via Equalizer APO (`eposctl eqapo`)
+- [ ] Parametric EQ editor in the GUI (any number of bands; 9-band fit or Equalizer APO)
 - [x] Offsets of the remaining APO fields (`hrtf_preset`, noise reduction, HPF, speech
       compressor; from the settings serialiser in `EAPO.dll`)
 - [x] Measure them on the H3PRO: the gate and the mic EQ need their enable flags

@@ -167,7 +167,8 @@ eposctl preset music             # flat | music | esport | movie
 eposctl preset valorant          # valorant | delta-force | cod | pubg
 eposctl eq 6 4 1 0 -1 0 1 4 6    # 9 speaker bands in dB (-6..6), low to high
 eposctl mic-eq 0 0 0 0 0 0 0 0 0
-eposctl eq-import ParametricEQ.txt [--mic] [--dry-run]
+eposctl eq-import ParametricEQ.txt [--mic] [--dry-run]   # best 9-band fit of any curve
+eposctl eqapo ParametricEQ.txt   # exact curve via Equalizer APO, if you installed it
 eposctl surround on
 eposctl reverb 30                # percent
 eposctl gate 40                  # percent

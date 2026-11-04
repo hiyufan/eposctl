@@ -151,7 +151,8 @@ eposctl preset music             # flat | music | esport | movie
 eposctl preset valorant          # valorant | delta-force | cod | pubg
 eposctl eq 6 4 1 0 -1 0 1 4 6    # 九个频段（dB，-6..6），从低到高
 eposctl mic-eq 0 0 0 0 0 0 0 0 0
-eposctl eq-import ParametricEQ.txt [--mic] [--dry-run]
+eposctl eq-import ParametricEQ.txt [--mic] [--dry-run]   # 任意曲线拟合到 9 段
+eposctl eqapo ParametricEQ.txt   # 通过 Equalizer APO 精确还原（需自行安装）
 eposctl surround on
 eposctl reverb 30                # 百分比
 eposctl gate 40                  # 百分比

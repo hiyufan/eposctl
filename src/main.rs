@@ -53,6 +53,15 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Write a parametric EQ with any number of bands (ParametricEQ.txt) to
+    /// Equalizer APO for the EPOS playback device, and flatten the headset's own
+    /// 9-band EQ. Without FILE: show what is there
+    Eqapo {
+        file: Option<std::path::PathBuf>,
+        /// Remove eposctl's bands from Equalizer APO
+        #[arg(long, conflicts_with = "file")]
+        off: bool,
+    },
     /// Set reverb amount in percent (0-100)
     Reverb { percent: f32 },
     /// Set microphone noise gate amount in percent (0-100)
@@ -355,6 +364,48 @@ fn info() -> std::io::Result<()> {
     Ok(())
 }
 
+fn eqapo(file: Option<std::path::PathBuf>, off: bool, device: Option<DeviceId>) -> std::io::Result<()> {
+    use eposctl::audio::{self, Flow};
+    use eposctl::eqapo;
+    fn other(m: impl Into<String>) -> std::io::Error {
+        std::io::Error::other(m.into())
+    }
+    let dir = eqapo::config_dir().ok_or_else(|| {
+        other("Equalizer APO is not installed. Get it from https://sourceforge.net/projects/equalizerapo/ and select the EPOS playback device in its Configurator.")
+    })?;
+    let ep = audio::endpoints(Flow::Output)
+        .map_err(|e| other(e.to_string()))?
+        .into_iter()
+        .find(|e| audio::is_epos(&e.name))
+        .ok_or_else(|| other("no EPOS playback device found"))?;
+    let word = eqapo::device_word(&ep.id).ok_or_else(|| other(format!("unexpected endpoint id {}", ep.id)))?;
+    if off {
+        let path = eqapo::write(None, &word)?;
+        println!("removed eposctl's bands ({})", path.display());
+        return Ok(());
+    }
+    let Some(file) = file else {
+        println!("Equalizer APO config: {}", dir.display());
+        match eqapo::read() {
+            Some(p) => {
+                println!("eposctl bands for {}:", ep.name);
+                print!("{}", p.to_apo_text());
+            }
+            None => println!("no bands from eposctl"),
+        }
+        return Ok(());
+    };
+    let text = std::fs::read_to_string(&file)?;
+    let peq = eposctl::peq::Peq::from_apo_text(&text).map_err(other)?;
+    let path = eqapo::write(Some(&peq), &word)?;
+    // Otherwise the headset's own EQ would apply on top.
+    ApoChannel::open(device)?.modify(|s| s.set_speaker_eq(&[0.0; BANDS]))?;
+    println!("wrote {} bands for {} to {}", peq.bands.len(), ep.name, path.display());
+    println!("set the headset's own 9-band EQ flat");
+    println!("Equalizer APO only applies them if it is installed on this device (check in its Configurator).");
+    Ok(())
+}
+
 fn nr_name(level: u16) -> String {
     match level {
         0 => "0 (off)".into(),
@@ -395,6 +446,7 @@ fn run(cli: Cli) -> std::io::Result<()> {
         Cmd::Info => return info(),
         Cmd::Sidetone { level } => return sidetone(level),
         Cmd::NoiseReduction { level } => return noise_reduction(level),
+        Cmd::Eqapo { file, off } => return eqapo(file, off, cli.device),
         Cmd::Raw { group, command, values, write, listen, .. } => {
             return raw(group.zip(command), values, write, listen);
         }
@@ -423,6 +475,17 @@ fn run(cli: Cli) -> std::io::Result<()> {
         for (i, g) in imp.gains.iter().enumerate() {
             println!("{:>8}  {g:+.1} dB", eposctl::eqfile::band_freq(i));
         }
+        if let Ok(peq) = eposctl::peq::Peq::from_apo_text(&text) {
+            // How far the 9-band curve stays from the file's own curve.
+            let off = |f: f64| eposctl::peq::epos_db(&imp.gains, f) - imp.shift as f64 - peq.db_at(f);
+            // Same range as the fit: from half an octave below the lowest band.
+            let grid = (0..=60).map(|k| 44.2 * (20000.0f64 / 44.2).powf(k as f64 / 60.0));
+            let worst = grid.map(|f| (off(f).abs(), f)).fold((0.0, 0.0), |a, b| if b.0 > a.0 { b } else { a });
+            println!(
+                "largest difference from the file's curve: {:.1} dB at {:.0} Hz ({} filters on 9 bands)",
+                worst.0, worst.1, peq.bands.len()
+            );
+        }
         if imp.shift != 0.0 {
             println!("shifted by {:+.1} dB to fit -6..+6 dB", imp.shift);
         }
@@ -442,6 +505,7 @@ fn run(cli: Cli) -> std::io::Result<()> {
         | Cmd::Info
         | Cmd::Sidetone { .. }
         | Cmd::NoiseReduction { .. }
+        | Cmd::Eqapo { .. }
         | Cmd::Report { .. }
         | Cmd::Audio { .. }
         | Cmd::Raw { .. } => {
