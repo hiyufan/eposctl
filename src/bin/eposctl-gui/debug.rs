@@ -67,6 +67,6 @@ fn save_png(path: &std::ffi::OsStr, img: &egui::ColorImage) {
     let mut enc = png::Encoder::new(std::io::BufWriter::new(file), img.width() as u32, img.height() as u32);
     enc.set_color(png::ColorType::Rgba);
     enc.set_depth(png::BitDepth::Eight);
-    let bytes: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_array()).collect();
+    let bytes: Vec<u8> = img.pixels.iter().flat_map(egui::Color32::to_array).collect();
     enc.write_header().and_then(|mut w| w.write_image_data(&bytes)).expect("write png");
 }

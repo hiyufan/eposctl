@@ -24,7 +24,9 @@ fn sidetone_raw(v: f32) -> u16 {
 
 impl App {
     pub(super) fn page_mic(&mut self, ui: &mut Ui, d: &DevState) {
-        let Some(gate) = self.editor.settings().map(|s| s.noise_gate()) else { return self.apo_missing(ui) };
+        let Some(gate) = self.editor.settings().map(eposctl::apo::Settings::noise_gate) else {
+            return self.apo_missing(ui);
+        };
         ui.columns(2, |cols| {
             let (a, b) = cols.split_at_mut(1);
             widgets::panel().show(&mut a[0], |ui| self.noise_gate(ui, gate));
@@ -114,7 +116,7 @@ impl App {
             }
         });
         ui.add_space(6.0);
-        let mut g = self.editor.settings().map(|x| x.mic_eq()).unwrap_or_default();
+        let mut g = self.editor.settings().map(eposctl::apo::Settings::mic_eq).unwrap_or_default();
         let bands = self.meters.bands;
         let levels = self.editor.is_metering().then_some(&bands[..]);
         if eq::editor(ui, "mic", &mut g, 230.0, levels) {

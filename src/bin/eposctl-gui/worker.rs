@@ -3,7 +3,8 @@
 //! It keeps `DevState` up to date from responses and notifications, polls the
 //! battery, and executes commands from the UI. Every update wakes the UI.
 
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
+use std::io;
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -51,48 +52,87 @@ fn update(state: &Shared, wake: &impl Fn(), f: impl FnOnce(&mut DevState)) {
     wake();
 }
 
+/// Reconnects whenever the dongle goes away; returns when the UI is gone.
 fn run(state: Shared, rx: Receiver<Cmd>, wake: impl Fn()) {
+    let ctx = Ctx { state, wake };
     loop {
-        let h = match Headset::open() {
-            Ok(h) => h,
-            Err(_) => {
-                update(&state, &wake, |s| *s = DevState::default());
-                match rx.recv_timeout(RECONNECT_EVERY) {
-                    Err(RecvTimeoutError::Disconnected) => return,
-                    _ => continue,
-                }
+        let Ok(h) = Headset::open() else {
+            ctx.update(|s| *s = DevState::default());
+            match rx.recv_timeout(RECONNECT_EVERY) {
+                Err(RecvTimeoutError::Disconnected) => return,
+                _ => continue,
             }
         };
-        update(&state, &wake, |s| s.dongle = true);
-        match session(&h, &state, &rx, &wake) {
-            Ok(()) => return, // UI went away
-            Err(_) => {
-                // Dongle unplugged or I/O error: start over.
-                drop(h);
-                update(&state, &wake, |s| *s = DevState::default());
-                std::thread::sleep(RECONNECT_EVERY);
-            }
+        ctx.update(|s| s.dongle = true);
+        if session(&h, &ctx, &rx).is_ok() {
+            return; // UI went away
+        }
+        // Dongle unplugged or I/O error: start over.
+        drop(h);
+        ctx.update(|s| *s = DevState::default());
+        std::thread::sleep(RECONNECT_EVERY);
+    }
+}
+
+/// Shared state plus the UI wake-up, for publishing changes.
+struct Ctx<W: Fn()> {
+    state: Shared,
+    wake: W,
+}
+
+impl<W: Fn()> Ctx<W> {
+    fn update(&self, f: impl FnOnce(&mut DevState)) {
+        update(&self.state, &self.wake, f);
+    }
+
+    fn linked(&self) -> bool {
+        self.state.lock().unwrap().linked == Some(true)
+    }
+}
+
+/// Commands since the last look, collapsed: only the latest value of each
+/// setting, so slider drags don't queue up.
+#[derive(Default)]
+struct Pending {
+    sidetone: Option<u16>,
+    noise_reduction: Option<u16>,
+    refresh: bool,
+}
+
+/// `None` once the UI has gone away.
+fn drain(rx: &Receiver<Cmd>) -> Option<Pending> {
+    let mut p = Pending::default();
+    loop {
+        match rx.try_recv() {
+            Ok(Cmd::SetSidetone(v)) => p.sidetone = Some(v),
+            Ok(Cmd::SetNoiseReduction(v)) => p.noise_reduction = Some(v),
+            Ok(Cmd::Refresh) => p.refresh = true,
+            Err(TryRecvError::Empty) => return Some(p),
+            Err(TryRecvError::Disconnected) => return None,
         }
     }
 }
 
+/// A timeout means the headset did not answer: not an I/O failure.
+fn timed_out<T>(r: &io::Result<T>) -> bool {
+    matches!(r, Err(e) if e.kind() == io::ErrorKind::TimedOut)
+}
+
 /// Query everything the UI shows. A timeout means the headset is not linked.
-fn query_all(h: &Headset, state: &Shared, wake: &impl Fn()) -> std::io::Result<()> {
-    let product = match h.product_name() {
-        Ok(p) => p,
-        Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {
-            update(state, wake, |s| s.linked = Some(false));
-            return Ok(());
-        }
-        Err(e) => return Err(e),
-    };
+fn query_all(h: &Headset, ctx: &Ctx<impl Fn()>) -> io::Result<()> {
+    let product = h.product_name();
+    if timed_out(&product) {
+        ctx.update(|s| s.linked = Some(false));
+        return Ok(());
+    }
+    let product = product?;
     let serial = h.serial_number().ok();
     let firmware = h.firmware().ok();
     let battery = h.battery().ok();
     let sidetone = h.sidetone().ok();
     // The official app treats -1 as "no noise reduction in this headset".
     let noise_reduction = h.noise_reduction().ok().filter(|&l| l <= 2);
-    update(state, wake, |s| {
+    ctx.update(|s| {
         s.linked = Some(true);
         s.product = Some(product);
         s.serial = serial;
@@ -104,77 +144,80 @@ fn query_all(h: &Headset, state: &Shared, wake: &impl Fn()) -> std::io::Result<(
     Ok(())
 }
 
-fn session(h: &Headset, state: &Shared, rx: &Receiver<Cmd>, wake: &impl Fn()) -> std::io::Result<()> {
-    query_all(h, state, wake)?;
+/// Talk to one dongle until it fails (`Err`) or the UI goes away (`Ok`).
+fn session(h: &Headset, ctx: &Ctx<impl Fn()>, rx: &Receiver<Cmd>) -> io::Result<()> {
+    query_all(h, ctx)?;
     let mut next_battery = Instant::now() + BATTERY_EVERY;
     // After a link-up, give the headset a moment before querying it.
     let mut requery_at: Option<Instant> = None;
-
     loop {
-        // Commands: keep only the latest sidetone value so slider drags don't queue up.
-        let mut sidetone = None;
-        let mut noise_reduction = None;
-        let mut refresh = false;
-        loop {
-            match rx.try_recv() {
-                Ok(Cmd::SetSidetone(v)) => sidetone = Some(v),
-                Ok(Cmd::SetNoiseReduction(v)) => noise_reduction = Some(v),
-                Ok(Cmd::Refresh) => refresh = true,
-                Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => return Ok(()),
-            }
-        }
-        if let Some(v) = sidetone
-            && let Ok(0) = h.set_sidetone(v)
-        {
-            update(state, wake, |s| s.sidetone = Some(v));
-        }
-        if let Some(v) = noise_reduction
-            && let Ok(0) = h.set_noise_reduction(v)
-        {
-            // Read back: the headset keeps this setting.
-            let got = h.noise_reduction().ok();
-            update(state, wake, |s| s.noise_reduction = got);
-        }
-        if refresh {
-            query_all(h, state, wake)?;
-        }
+        let Some(pending) = drain(rx) else { return Ok(()) };
+        execute(h, ctx, &pending)?;
         if requery_at.is_some_and(|t| Instant::now() >= t) {
             requery_at = None;
-            query_all(h, state, wake)?;
+            query_all(h, ctx)?;
         }
-        let linked = state.lock().unwrap().linked == Some(true);
-        if linked && Instant::now() >= next_battery {
+        if ctx.linked() && Instant::now() >= next_battery {
             next_battery = Instant::now() + BATTERY_EVERY;
-            match h.battery() {
-                Ok(b) => update(state, wake, |s| s.battery = Some(b)),
-                Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {}
-                Err(e) => return Err(e),
-            }
+            poll_battery(h, ctx)?;
         }
-
         let Some(frame) = h.poll_frame(150)? else { continue };
-        match frame.decode() {
-            Message::HeadsetLink { connected } => {
-                update(state, wake, |s| {
-                    s.linked = Some(connected);
-                    if !connected {
-                        s.battery = None;
-                        s.anc = None;
-                    }
-                });
-                if connected {
-                    requery_at = Some(Instant::now() + Duration::from_millis(1500));
-                }
-            }
-            // Responses to anyone's queries (including the official service) are fair game.
-            Message::Battery { percent } => update(state, wake, |s| s.battery = Some(percent)),
-            Message::SidetoneChanged { raw } => update(state, wake, |s| s.sidetone = Some(raw)),
-            Message::Anc { on } => update(state, wake, |s| s.anc = Some(on)),
-            Message::ProductName(p) => update(state, wake, |s| s.product = Some(p)),
-            Message::FirmwareVersion(f) => update(state, wake, |s| s.firmware = Some(f)),
-            Message::SerialNumber(n) => update(state, wake, |s| s.serial = Some(n)),
-            _ => {}
+        if on_message(ctx, frame.decode()) {
+            requery_at = Some(Instant::now() + Duration::from_millis(1500));
         }
     }
+}
+
+fn execute(h: &Headset, ctx: &Ctx<impl Fn()>, p: &Pending) -> io::Result<()> {
+    if let Some(v) = p.sidetone
+        && let Ok(0) = h.set_sidetone(v)
+    {
+        ctx.update(|s| s.sidetone = Some(v));
+    }
+    if let Some(v) = p.noise_reduction
+        && let Ok(0) = h.set_noise_reduction(v)
+    {
+        // Read back: the headset keeps this setting.
+        let got = h.noise_reduction().ok();
+        ctx.update(|s| s.noise_reduction = got);
+    }
+    if p.refresh {
+        query_all(h, ctx)?;
+    }
+    Ok(())
+}
+
+fn poll_battery(h: &Headset, ctx: &Ctx<impl Fn()>) -> io::Result<()> {
+    let b = h.battery();
+    if timed_out(&b) {
+        return Ok(());
+    }
+    let b = b?;
+    ctx.update(|s| s.battery = Some(b));
+    Ok(())
+}
+
+/// Apply a notification or response. Responses to anyone's queries (including
+/// the official service) are fair game. True when the headset just linked up.
+fn on_message(ctx: &Ctx<impl Fn()>, msg: Message) -> bool {
+    match msg {
+        Message::HeadsetLink { connected } => {
+            ctx.update(|s| {
+                s.linked = Some(connected);
+                if !connected {
+                    s.battery = None;
+                    s.anc = None;
+                }
+            });
+            return connected;
+        }
+        Message::Battery { percent } => ctx.update(|s| s.battery = Some(percent)),
+        Message::SidetoneChanged { raw } => ctx.update(|s| s.sidetone = Some(raw)),
+        Message::Anc { on } => ctx.update(|s| s.anc = Some(on)),
+        Message::ProductName(p) => ctx.update(|s| s.product = Some(p)),
+        Message::FirmwareVersion(f) => ctx.update(|s| s.firmware = Some(f)),
+        Message::SerialNumber(n) => ctx.update(|s| s.serial = Some(n)),
+        _ => {}
+    }
+    false
 }

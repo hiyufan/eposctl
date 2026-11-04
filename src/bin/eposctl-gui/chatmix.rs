@@ -39,6 +39,39 @@ struct Track {
     factor: f32,
 }
 
+impl Track {
+    fn new(volume: f32) -> Self {
+        Self { baseline: volume, last: volume, factor: 1.0 }
+    }
+
+    /// The stream is at `cur`. If that is not what we left it at, it was changed
+    /// in the Windows mixer: that is the new level at the current factor.
+    fn follow_mixer(&mut self, cur: f32) {
+        if (cur - self.last).abs() <= SAME {
+            return;
+        }
+        if self.factor > SAME {
+            self.baseline = (cur / self.factor).min(1.0);
+        } else {
+            self.baseline = cur;
+            self.factor = 1.0;
+        }
+        self.last = cur;
+    }
+
+    /// Scale to `factor`; `set` applies a volume and says whether it worked.
+    fn scale(&mut self, factor: f32, set: impl FnOnce(f32) -> bool) {
+        if (factor - self.factor).abs() <= 0.001 {
+            return;
+        }
+        let want = (self.baseline * factor).clamp(0.0, 1.0);
+        if set(want) {
+            self.last = want;
+            self.factor = factor;
+        }
+    }
+}
+
 enum Msg {
     Set(ChatMix),
     Stop(Sender<()>),
@@ -111,41 +144,33 @@ impl State {
         let mut seen = HashSet::new();
         for ep in audio::endpoints(Flow::Output).unwrap_or_default() {
             for s in audio::sessions(Some(&ep.id)).unwrap_or_default() {
-                let (Some(exe), Ok(cur)) = (s.exe.as_deref(), s.volume()) else { continue };
-                let f = if voice_apps.iter().any(|a| a == exe) { voice } else { game };
-                let program = format!("{}|{exe}", ep.id);
-                seen.insert(s.id.clone());
-                let saved = self.saved.get(&program).copied();
-                let t = self.tracks.entry(s.id.clone()).or_insert_with(|| match saved {
-                    // Same volume we left it at: it is still scaled from that baseline.
-                    Some(p) if (cur - p.last).abs() < SAME => p,
-                    _ => Track { baseline: cur, last: cur, factor: 1.0 },
-                });
-                let before = *t;
-                if (cur - t.last).abs() > SAME {
-                    // Changed in the Windows mixer: that is the new level at the current factor.
-                    if t.factor > SAME {
-                        t.baseline = (cur / t.factor).min(1.0);
-                    } else {
-                        t.baseline = cur;
-                        t.factor = 1.0;
-                    }
-                    t.last = cur;
-                }
-                if (f - t.factor).abs() > 0.001 {
-                    let want = (t.baseline * f).clamp(0.0, 1.0);
-                    if s.set_volume(want).is_ok() {
-                        t.last = want;
-                        t.factor = f;
-                    }
-                }
-                if *t != before || saved != Some(*t) {
-                    self.saved.insert(program, *t);
-                    self.dirty = true;
+                let Some(exe) = s.exe.as_deref() else { continue };
+                let factor = if voice_apps.iter().any(|a| a == exe) { voice } else { game };
+                if self.tick_stream(&format!("{}|{exe}", ep.id), &s, factor) {
+                    seen.insert(s.id.clone());
                 }
             }
         }
         self.tracks.retain(|k, _| seen.contains(k));
+    }
+
+    /// One stream of `program` (`device|exe`). False if its volume is unreadable.
+    fn tick_stream(&mut self, program: &str, s: &audio::Session, factor: f32) -> bool {
+        let Ok(cur) = s.volume() else { return false };
+        let saved = self.saved.get(program).copied();
+        let t = self.tracks.entry(s.id.clone()).or_insert_with(|| match saved {
+            // Same volume we left it at: it is still scaled from that baseline.
+            Some(p) if (cur - p.last).abs() < SAME => p,
+            _ => Track::new(cur),
+        });
+        let before = *t;
+        t.follow_mixer(cur);
+        t.scale(factor, |v| s.set_volume(v).is_ok());
+        if *t != before || saved != Some(*t) {
+            self.saved.insert(program.to_owned(), *t);
+            self.dirty = true;
+        }
+        true
     }
 
     fn restore(&mut self) {

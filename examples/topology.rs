@@ -54,7 +54,7 @@ fn dump_part(part: &IPart, depth: usize, seen: &mut HashSet<(u32, String)>, inco
             }
         }
         if let Ok(m) = activate::<IAudioMute>(part) {
-            line += &format!("  mute={:?}", m.GetMute().map(|b| b.as_bool()));
+            line += &format!("  mute={:?}", m.GetMute().map(windows::Win32::Foundation::BOOL::as_bool));
         }
         println!("{line}");
         let list = if incoming { part.EnumPartsIncoming() } else { part.EnumPartsOutgoing() };

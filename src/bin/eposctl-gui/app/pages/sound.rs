@@ -147,7 +147,7 @@ impl App {
             ui.add_space(6.0);
             let editable = !self.editor.is_comparing();
             ui.add_enabled_ui(editable, |ui| {
-                let mut g = self.editor.settings().map(|x| x.speaker_eq()).unwrap_or_default();
+                let mut g = self.editor.settings().map(eposctl::apo::Settings::speaker_eq).unwrap_or_default();
                 if eq::editor(ui, "speaker", &mut g, 230.0, None) && editable {
                     self.apply(|st| st.set_speaker_eq(&g));
                 }
