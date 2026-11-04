@@ -48,7 +48,7 @@ eposctl 直接和驱动通信，不用官方软件、也不用它的后台服务
 |---|---|
 | **音效** | 鼠标拖动的九段均衡器，出厂预设（音乐、电竞、电影、平直），虚拟 7.1 环绕声，混响，撤销/重做，与修改前对比 |
 | **游戏预设** | 为听脚步声调的 **无畏契约**、**三角洲行动**、**使命召唤**、**绝地求生** 预设，针对 H3 系列调整（[怎么调出来的](docs/game-presets.md)） |
-| **麦克风** | 噪声门、侧音、九段麦克风均衡器 |
+| **麦克风** | 噪声门、耳机自带降噪（关 / 中 / 强）、侧音、九段麦克风均衡器、实时电平表 |
 | **我的预设** | 保存、覆盖，导入导出 JSON；可以直接载入 [AutoEQ](https://github.com/jaakkopasanen/AutoEq) / Equalizer APO 的 EQ 文件 |
 | **自动化** | 切到某个游戏时自动换预设；全局快捷键；耳机关机时自动切换 Windows 默认声音设备，开机再切回来 |
 | **ChatMix** | 游戏 / 语音平衡，通过 Windows 音量合成器调节（Discord、KOOK、YY、QQ、微信、TeamSpeak 等算作语音） |
@@ -99,8 +99,8 @@ eposctl 直接和驱动通信，不用官方软件、也不用它的后台服务
 <details>
 <summary><b>会改耳机固件吗？</b></summary>
 
-不会。均衡器、环绕声、混响、噪声门都是电脑上的驱动在处理。eposctl 唯一发给耳机的设置是侧音音量，
-和官方软件的做法一样。
+不会。均衡器、环绕声、混响、噪声门都是电脑上的驱动在处理。eposctl 发给耳机的设置只有侧音音量
+和麦克风降噪档位，用的是和官方软件相同的命令。
 </details>
 
 <details>
@@ -159,6 +159,7 @@ eposctl --device 1395:0303 status
 
 eposctl info                     # 型号、序列号、固件、电量、侧音（HID）
 eposctl sidetone [0-255]         # 查看或设置侧音
+eposctl noise-reduction [0-2]    # 耳机麦克风降噪：关、中、强
 eposctl monitor [--raw]          # 打印耳机事件（只读）
 eposctl report [--query]         # 生成只读的设备报告，用于提 issue
 eposctl raw --probe              # 只读的 HID 查询，用于研究协议

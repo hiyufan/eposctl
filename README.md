@@ -50,7 +50,7 @@ directly, so you keep every setting without the old app or its background servic
 |---|---|
 | **Sound** | 9-band EQ you drag with the mouse, factory presets (music, esport, movie, flat), virtual 7.1 surround, reverb, undo/redo, compare to before |
 | **Game presets** | Footstep presets for **VALORANT**, **Delta Force**, **Call of Duty** and **PUBG**, tuned for the H3 series ([how they were made](docs/game-presets.md)) |
-| **Microphone** | Noise gate, sidetone, 9-band mic EQ |
+| **Microphone** | Noise gate, the headset's own noise reduction (off / medium / strong), sidetone, 9-band mic EQ, live level meter |
 | **Your presets** | Save, overwrite, import and export as JSON; load an [AutoEQ](https://github.com/jaakkopasanen/AutoEq) or Equalizer APO file |
 | **Automation** | Switch preset when a game comes to the front, global hotkeys, move the Windows default sound devices when the headset turns off and back on |
 | **ChatMix** | Game / voice balance through the Windows volume mixer (Discord, KOOK, TeamSpeak, QQ, WeChat and more count as voice) |
@@ -106,8 +106,8 @@ its service are not needed.
 <summary><b>Does it change my headset's firmware?</b></summary>
 
 No. EQ, surround, reverb and the noise gate are processed by the driver on your
-PC. The only setting eposctl sends to the headset is the sidetone level, as the
-official app did.
+PC. The only settings eposctl sends to the headset are the sidetone level and the
+microphone noise reduction level, the same commands the official app used.
 </details>
 
 <details>
@@ -175,6 +175,7 @@ eposctl --device 1395:0303 status
 
 eposctl info                     # name, serial, firmware, battery, sidetone (HID)
 eposctl sidetone [0-255]         # show or set sidetone level
+eposctl noise-reduction [0-2]    # headset mic noise reduction: off, medium, strong
 eposctl monitor [--raw]          # print headset events (read-only)
 eposctl report [--query]         # read-only device report for a GitHub issue
 eposctl raw --probe              # read-only HID queries, for protocol research

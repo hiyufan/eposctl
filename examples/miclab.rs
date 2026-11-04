@@ -153,6 +153,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("recording from {}", ep.name);
 
     let mut acc = vec![Stats::default(); conds.len()];
+    // 20 ms block levels (dBFS) per condition, for gate measurements.
+    let mut blocks: Vec<Vec<f64>> = vec![Vec::new(); conds.len()];
     let result = (|| -> Result<(), Box<dyn std::error::Error>> {
         for r in 0..rounds {
             for (i, (label, c)) in conds.iter().enumerate() {
@@ -162,6 +164,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::thread::sleep(Duration::from_millis(400));
                 let (x, rate) = record(&ep.id, secs)?;
                 let s = analyse(&x, rate);
+                let n = (rate / 50) as usize;
+                blocks[i].extend(x.chunks_exact(n).map(|b| {
+                    db((b.iter().map(|&v| (v as f64) * (v as f64)).sum::<f64>() / n as f64).sqrt())
+                }));
                 eprintln!(
                     "round {} {label:<40} rms {:6.1}  low {:6.1}  high {:6.1}  peak {:6.1} dBFS  zero {:4.0}%",
                     r + 1,
@@ -186,16 +192,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("restored: {restore}");
     result?;
 
-    println!("\n{:<40} {:>7} {:>7} {:>7} {:>7} {:>6}", "condition", "rms", "low", "high", "peak", "zero");
-    for ((label, _), a) in conds.iter().zip(&acc) {
+    println!(
+        "\n{:<40} {:>7} {:>7} {:>7} {:>7} {:>6} {:>6} {:>6} {:>6} {:>6}",
+        "condition", "rms", "low", "high", "peak", "zero", "open", "p10", "p50", "p90"
+    );
+    for (((label, _), a), b) in conds.iter().zip(&acc).zip(&mut blocks) {
         let n = a.n.max(1) as f64;
+        // "open": share of 20 ms blocks above -90 dBFS (i.e. not gated to silence).
+        let open = b.iter().filter(|&&l| l > -90.0).count() as f64 / b.len().max(1) as f64;
+        b.sort_by(|x, y| x.total_cmp(y));
+        let q = |p: f64| b.get(((b.len() as f64 - 1.0) * p).round() as usize).copied().unwrap_or(f64::NAN);
         println!(
-            "{label:<40} {:7.1} {:7.1} {:7.1} {:7.1} {:5.0}%",
+            "{label:<40} {:7.1} {:7.1} {:7.1} {:7.1} {:5.0}% {:5.0}% {:6.1} {:6.1} {:6.1}",
             db((a.rms / n).sqrt()),
             db((a.low / n).sqrt()),
             db((a.high / n).sqrt()),
             db(a.peak),
-            a.zero / n * 100.0
+            a.zero / n * 100.0,
+            open * 100.0,
+            q(0.1),
+            q(0.5),
+            q(0.9)
         );
     }
     Ok(())

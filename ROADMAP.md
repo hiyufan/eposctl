@@ -40,6 +40,9 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
 
 ## Research track (runs alongside the above)
 
+- [x] Microphone noise reduction in the headset (`0A/11`, 0-2; values from the official UI),
+      in the CLI (`eposctl noise-reduction`) and on the Mic page
+- [ ] Auto sleep on/off (`08/EF`; values known, but no getter to read the current state)
 - [x] `eposctl raw` (and `raw --probe`): send read-only HID requests to decode the unknown getters
       (`0A/12`, `0A/17`, `01/14`, `06/14`). Setters (`0A/11`, `0A/16`, `06/32`, `01/1F`)
       are tried one at a time with read-back, because they may persist on the headset.

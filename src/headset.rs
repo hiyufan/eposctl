@@ -22,6 +22,8 @@ pub mod cmd {
     pub const BATTERY: (u16, u16) = (0x12, 0x03); // opcode 14
     pub const SIDETONE_GET: (u16, u16) = (0x0A, 0x0C); // opcode 16 (GetSideToneGain)
     pub const SIDETONE_SET: (u16, u16) = (0x0A, 0x0B); // opcode 17, setter
+    pub const NOISE_REDUCTION_SET: (u16, u16) = (0x0A, 0x11); // opcode 18, setter
+    pub const NOISE_REDUCTION_GET: (u16, u16) = (0x0A, 0x12); // opcode 19 (GetNoiseReductionLevel)
 }
 
 pub struct Headset {
@@ -160,6 +162,22 @@ impl Headset {
 
     pub fn sidetone(&self) -> io::Result<u16> {
         self.value(cmd::SIDETONE_GET)
+    }
+
+    /// Microphone noise reduction in the headset: 0 off, 1 medium, 2 strong.
+    /// The official UI shows a 0..=2 slider for it when this getter does not
+    /// answer `-1`, and only then sends the setter.
+    pub fn noise_reduction(&self) -> io::Result<u16> {
+        self.value(cmd::NOISE_REDUCTION_GET)
+    }
+
+    /// Set noise reduction (0..=2). Returns the acknowledgement's status word.
+    pub fn set_noise_reduction(&self, level: u16) -> io::Result<u16> {
+        if level > 2 {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "noise reduction is 0, 1 or 2"));
+        }
+        let f = self.request(cmd::NOISE_REDUCTION_SET, Some(level), Duration::from_millis(1500))?;
+        Ok(f.words().get(2).copied().unwrap_or(0xFFFF))
     }
 
     /// Set sidetone. Returns the status word of the acknowledgement (0 = success, inferred).

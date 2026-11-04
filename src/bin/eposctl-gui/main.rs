@@ -1441,6 +1441,26 @@ impl App {
         });
         ui.add_space(12.0);
 
+        // Hardware noise reduction (HID 0A/11); shown only when the headset reports a level.
+        if let Some(level) = d.noise_reduction.filter(|_| d.linked == Some(true)) {
+            widgets::panel().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        widgets::row_title(ui, s.noise_reduction, None, true);
+                        widgets::desc(ui, s.noise_reduction_desc);
+                    });
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        for (l, label) in [(2, s.nr_strong), (1, s.nr_medium), (0, s.nr_off)] {
+                            if widgets::chip(ui, label, level == l).clicked() && level != l {
+                                let _ = self.tx.send(Cmd::SetNoiseReduction(l));
+                            }
+                        }
+                    });
+                });
+            });
+            ui.add_space(12.0);
+        }
+
         widgets::panel().show(ui, |ui| {
             ui.horizontal(|ui| {
                 widgets::heading(ui, s.mic_eq);

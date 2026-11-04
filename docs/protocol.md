@@ -51,9 +51,21 @@ field (`examples/miclab.rs`, 2026-11-04, H3PRO Hybrid). The official UI set
 them on leaving, so its mic EQ and gate only acted on that page. eposctl
 switches `0x42` and `0x44` with the EQ gains and the gate amount instead.
 
-Gate amount: with `0x44` on, 35 % passed normal speech (peaks around -30 dBFS)
-but blocked quiet speech (peaks around -40 dBFS); 100 % blocked both. The exact
-percent-to-dB mapping is not known.
+Gate (with `0x44` on), measured with speech and with music played into the mic:
+
+- It follows a slow level average, not single 20 ms blocks: music averaging
+  -38 dBFS kept it open through -61 dBFS passages at 40 %, while quiet speech
+  averaging -60 dBFS was shut at 35 %.
+- Closed, it attenuates by roughly 50 dB rather than muting.
+- It acts after the mic EQ: lowering the signal by about 10 dB with the EQ made
+  it close at lower amounts.
+- Rough threshold: -72 + 45 x amount dBFS, within about ±5 dB at 20-60 % (20 %
+  about -63, 35 % about -56, 60 % about -45). Music is too uneven to pin it
+  down further.
+
+Speech compressor presets 0-5 made no measurable difference on music around
+-36 dBFS; on quiet speech around -55 dBFS, preset 2 lowered it by about 20 dB.
+It behaves more like a downward expander for quiet input than a leveller.
 
 | Offset | Type | Meaning | Status |
 |---|---|---|---|
@@ -236,8 +248,8 @@ Recovered with Ghidra 12.1.4 from `EPOSGamingSuiteService` 1.12.2
 | 14 | `12, 03` | battery percent (`GetBatPercentage` reads offsets 0x11–0x12) | verified by eposctl |
 | 16 | `0A, 0C` | get sidetone (`GetSideToneGain` reads offset 0x11) | verified by eposctl |
 | 17 | `0A, 0B` + value | set sidetone | verified by eposctl (ack status 0, read-back matches) |
-| 18 | `0A, 11` + value | set noise reduction level (inferred: pairs with 19) | not tried |
-| 19 | `0A, 12` | get noise reduction level (`GetNoiseReductionLevel` reads offset 0x11); returns `1` on H3PRO | read by eposctl |
+| 18 | `0A, 11` + value | set microphone noise reduction, 0 off / 1 medium / 2 strong | verified by eposctl (ack status 0, read-back matches; 2 then back to 1) |
+| 19 | `0A, 12` | get microphone noise reduction (`GetNoiseReductionLevel` reads offset 0x11); `1` on the H3PRO by default | verified by eposctl |
 | 20 | `01, 14` | PID number (`parsePIDNumber`) | answered on connect (`0x0101`) |
 | 21 | `08, F0` | no parser | not sent |
 | 22 | `0A, 16` + value | set latency level (inferred: pairs with 23) | not tried |
@@ -247,6 +259,21 @@ Recovered with Ghidra 12.1.4 from `EPOSGamingSuiteService` 1.12.2
 | 26 | `01, 1F` + value | setter; its reply is parsed like 27 (byte at offset 0x11) | not tried |
 | 27 | `01, 20` | getter for 26 (byte at offset 0x11), meaning unknown | answered on connect (`1`) |
 | 28 | `06, 1C` | reply is not parsed for a value (case 28 yields the string "0"); may be an action | not sent |
+
+**Noise reduction in the official UI** (`EPOSGamingSuite.exe`,
+`MicrophoneViewModel.<NoiseCancellation_PreviewMouseLeftButtonUp>b__0`): a slider
+with `Minimum 0`, `Maximum 2`, `TickFrequency 1` (BAML `ucnoisecancellation`).
+If the headset reports noise reduction level `-1`, the UI writes the value to the
+APO's `mic_nr_preset` (`0xA0`) instead, a software fallback; otherwise it sends
+request type 5 with the value to the service, which becomes opcode 18. On the
+H3PRO the level is `1`, so noise reduction runs in the headset, which is why the
+APO's `mic_nr_enabled` had no measurable effect.
+
+**Auto sleep in the official UI** (`UCPlaybackDevice.<Lblautosleep_PreviewMouseLeftButtonUp>b__35_0`):
+an on/off toggle that sends request type 7 with `1` (on) or `0` (off); the UI
+hides it unless the service reports a status of 0 or 1. On the wire that is
+`DeviceAutoSleepLevel` below. eposctl does not send it yet: there is no getter, so
+the current value could not be put back.
 
 The meaning of opcodes 18/19/22/23 comes from the response parser: the
 service's response dispatcher switches on the internal opcode (jump table at

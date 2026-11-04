@@ -22,11 +22,14 @@ pub struct DevState {
     pub battery: Option<u8>,
     /// Raw device value: 0xFF = quietest, 0x00 = loudest.
     pub sidetone: Option<u16>,
+    /// Microphone noise reduction in the headset, 0..=2; `None` if unsupported.
+    pub noise_reduction: Option<u16>,
     pub anc: Option<bool>,
 }
 
 pub enum Cmd {
     SetSidetone(u16),
+    SetNoiseReduction(u16),
     Refresh,
 }
 
@@ -90,6 +93,8 @@ fn query_all(h: &Headset, state: &Shared, wake: &impl Fn()) -> std::io::Result<(
     let firmware = h.firmware().ok();
     let battery = h.battery().ok();
     let sidetone = h.sidetone().ok();
+    // The official app treats -1 as "no noise reduction in this headset".
+    let noise_reduction = h.noise_reduction().ok().filter(|&l| l <= 2);
     update(state, wake, |s| {
         s.linked = Some(true);
         s.product = Some(product);
@@ -97,6 +102,7 @@ fn query_all(h: &Headset, state: &Shared, wake: &impl Fn()) -> std::io::Result<(
         s.firmware = firmware;
         s.battery = battery;
         s.sidetone = sidetone;
+        s.noise_reduction = noise_reduction;
     });
     Ok(())
 }
@@ -110,10 +116,12 @@ fn session(h: &Headset, state: &Shared, rx: &Receiver<Cmd>, wake: &impl Fn()) ->
     loop {
         // Commands: keep only the latest sidetone value so slider drags don't queue up.
         let mut sidetone = None;
+        let mut noise_reduction = None;
         let mut refresh = false;
         loop {
             match rx.try_recv() {
                 Ok(Cmd::SetSidetone(v)) => sidetone = Some(v),
+                Ok(Cmd::SetNoiseReduction(v)) => noise_reduction = Some(v),
                 Ok(Cmd::Refresh) => refresh = true,
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => return Ok(()),
@@ -123,6 +131,13 @@ fn session(h: &Headset, state: &Shared, rx: &Receiver<Cmd>, wake: &impl Fn()) ->
             && let Ok(0) = h.set_sidetone(v) {
                 update(state, wake, |s| s.sidetone = Some(v));
             }
+        if let Some(v) = noise_reduction
+            && let Ok(0) = h.set_noise_reduction(v)
+        {
+            // Read back: the headset keeps this setting.
+            let got = h.noise_reduction().ok();
+            update(state, wake, |s| s.noise_reduction = got);
+        }
         if refresh {
             query_all(h, state, wake)?;
         }

@@ -63,6 +63,12 @@ enum Cmd {
     Info,
     /// Show or set sidetone level
     Sidetone { level: Option<u16> },
+    /// Show or set the headset's microphone noise reduction: 0 off, 1 medium, 2 strong
+    #[command(alias = "nr")]
+    NoiseReduction {
+        #[arg(value_parser = clap::value_parser!(u16).range(0..=2))]
+        level: Option<u16>,
+    },
     /// Print a read-only device report to attach to a GitHub issue (no serial number)
     Report {
         /// Seconds to listen to headset traffic
@@ -345,6 +351,28 @@ fn info() -> std::io::Result<()> {
     show("firmware", h.firmware());
     show("battery", h.battery().map(|b| format!("{b}%")));
     show("sidetone", h.sidetone().map(|s| s.to_string()));
+    show("noise red.", h.noise_reduction().map(|l| nr_name(l).to_string()));
+    Ok(())
+}
+
+fn nr_name(level: u16) -> String {
+    match level {
+        0 => "0 (off)".into(),
+        1 => "1 (medium)".into(),
+        2 => "2 (strong)".into(),
+        l => format!("{l} (unknown)"),
+    }
+}
+
+fn noise_reduction(level: Option<u16>) -> std::io::Result<()> {
+    let h = eposctl::headset::Headset::open()?;
+    if let Some(l) = level {
+        let status = h.set_noise_reduction(l)?;
+        if status != 0 {
+            return Err(std::io::Error::other(format!("headset rejected noise reduction {l} (status {status})")));
+        }
+    }
+    println!("noise reduction {}", nr_name(h.noise_reduction()?));
     Ok(())
 }
 
@@ -366,6 +394,7 @@ fn run(cli: Cli) -> std::io::Result<()> {
         Cmd::Audio { cmd } => return audio(cmd),
         Cmd::Info => return info(),
         Cmd::Sidetone { level } => return sidetone(level),
+        Cmd::NoiseReduction { level } => return noise_reduction(level),
         Cmd::Raw { group, command, values, write, listen, .. } => {
             return raw(group.zip(command), values, write, listen);
         }
@@ -412,6 +441,7 @@ fn run(cli: Cli) -> std::io::Result<()> {
         | Cmd::Monitor { .. }
         | Cmd::Info
         | Cmd::Sidetone { .. }
+        | Cmd::NoiseReduction { .. }
         | Cmd::Report { .. }
         | Cmd::Audio { .. }
         | Cmd::Raw { .. } => {
