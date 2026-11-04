@@ -10,8 +10,9 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
 
 ## 0.2: everyday features
 
-- [ ] Live microphone level meter on the Mic page, with the noise-gate threshold drawn on it
-      (**RE**: map the 15 APO meters; check whether the mic monitor flags must be set)
+- [x] Live microphone level meter and spectrum on the Mic page (APO meters at `0x440`,
+      with the mic monitor flags switched on while the page is open)
+- [ ] Noise-gate threshold drawn on the meter (needs the gate's percent-to-dB mapping)
 - [x] Low-battery notification at 20 / 10 / 5 %, once per level, reset when charged
 - [x] Surround toggle in the tray menu
 - [x] EQ undo and A/B compare
@@ -39,7 +40,7 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
 
 ## Research track (runs alongside the above)
 
-- [ ] `eposctl raw`: send read-only HID requests to decode the unknown getters
+- [x] `eposctl raw` (and `raw --probe`): send read-only HID requests to decode the unknown getters
       (`0A/12`, `0A/17`, `01/14`, `06/14`). Setters (`0A/11`, `0A/16`, `06/32`, `01/1F`)
       are tried one at a time with read-back, because they may persist on the headset.
       Likely candidates: auto power-off timer, prompt volume, mute tone, ANC control.

@@ -83,6 +83,105 @@ enum Cmd {
         #[command(subcommand)]
         cmd: Option<AudioCmd>,
     },
+    /// Send one raw HID request to the headset and print every frame that comes back
+    /// (research). GROUP and COMMAND are hex, as in docs/protocol.md: `raw 0A 12`
+    Raw {
+        #[arg(value_parser = parse_hex, required_unless_present = "probe")]
+        group: Option<u16>,
+        #[arg(value_parser = parse_hex, required_unless_present = "probe")]
+        command: Option<u16>,
+        /// u16 values to append (decimal, or hex with 0x). They make the request a setter.
+        #[arg(value_parser = parse_num)]
+        values: Vec<u16>,
+        /// Allow appending values. Setters can change settings stored on the headset.
+        #[arg(long)]
+        write: bool,
+        /// Send the read-only requests the official service sends on connect
+        #[arg(long, conflicts_with_all = ["group", "command", "values", "write"])]
+        probe: bool,
+        /// Milliseconds to collect frames after each request
+        #[arg(long, default_value_t = 800)]
+        listen: u64,
+    },
+}
+
+/// Read-only requests for `raw --probe`: the requests whose responses the
+/// official service hands to a getter-style parser (see docs/protocol.md). The
+/// serial number is left out.
+const PROBE: &[(u16, u16, &str)] = &[
+    (0x09, 0x01, "product name"),
+    (0x01, 0x03, "firmware"),
+    (0x12, 0x03, "battery"),
+    (0x0A, 0x0C, "sidetone"),
+    (0x0A, 0x12, "noise reduction level"),
+    (0x0A, 0x17, "latency level"),
+    (0x01, 0x14, "PID number"),
+    (0x01, 0x09, "sub-devices connected"),
+    (0x01, 0x20, "unknown; read side of 01/1F"),
+    (0x06, 0x14, "Bluetooth address"),
+    (0x06, 0x11, "number of link keys"),
+    (0x06, 0x27, "Bluetooth name"),
+];
+
+/// Never sent: puts the headset into firmware update mode (`parseEnterDfu`).
+const FORBIDDEN: &[(u16, u16)] = &[(0x01, 0x06)];
+
+/// Requests the official service sends without parsing a value from the reply,
+/// or that touch firmware update or pairing: they may be actions, so they need
+/// `--write` like setters do.
+const ACTIONS: &[(u16, u16)] = &[(0x01, 0x0A), (0x01, 0x0D), (0x06, 0x09), (0x06, 0x13), (0x06, 0x1C), (0x08, 0xF0)];
+
+
+fn parse_hex(s: &str) -> Result<u16, String> {
+    let t = s.trim_start_matches("0x").trim_start_matches("0X");
+    u16::from_str_radix(t, 16).map_err(|e| format!("{s}: {e}"))
+}
+
+fn parse_num(s: &str) -> Result<u16, String> {
+    match s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        Some(h) => u16::from_str_radix(h, 16),
+        None => s.parse(),
+    }
+    .map_err(|e| format!("{s}: {e}"))
+}
+
+fn raw(req: Option<(u16, u16)>, values: Vec<u16>, write: bool, listen: u64) -> std::io::Result<()> {
+    let refuse = |m: &str| Err(std::io::Error::other(m.to_string()));
+    if let Some(r) = req {
+        if FORBIDDEN.contains(&r) {
+            return refuse("refusing to send this request: it puts the headset into firmware update mode");
+        }
+        if ACTIONS.contains(&r) && !write {
+            return refuse("this request may perform an action (firmware update or pairing related); add --write to send it");
+        }
+    }
+    if !values.is_empty() && !write {
+        return refuse(
+            "values turn the request into a setter, which may change a setting stored on the headset; add --write to send it",
+        );
+    }
+    let list: Vec<(u16, u16, Vec<u16>, &str)> = match req {
+        Some((g, c)) => vec![(g, c, values, "")],
+        None => PROBE.iter().map(|&(g, c, what)| (g, c, Vec::new(), what)).collect(),
+    };
+    let h = eposctl::headset::Headset::open()?;
+    let window = std::time::Duration::from_millis(listen);
+    for (g, c, v, what) in list {
+        let args: String = v.iter().map(|w| format!(" {w}")).collect();
+        let note = if what.is_empty() { String::new() } else { format!("  ({what})") };
+        println!("> {g:02X}/{c:02X}{args}{note}");
+        let words: Vec<u16> = [g, c].into_iter().chain(v).collect();
+        let frames = h.exchange(&words, window)?;
+        if frames.is_empty() {
+            println!("  no response");
+        }
+        for f in frames {
+            // `<` marks the response that echoes the request's group and command.
+            let mark = if f.group() == Some(g) && f.command() == Some(c) { '<' } else { ' ' };
+            println!("{mark} kind={:#06x} node={} {}", f.kind, f.node, eposctl::report::describe(&f));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Subcommand)]
@@ -254,6 +353,9 @@ fn run(cli: Cli) -> std::io::Result<()> {
         Cmd::Audio { cmd } => return audio(cmd),
         Cmd::Info => return info(),
         Cmd::Sidetone { level } => return sidetone(level),
+        Cmd::Raw { group, command, values, write, listen, .. } => {
+            return raw(group.zip(command), values, write, listen);
+        }
         Cmd::Report { seconds, query } => {
             let opts = eposctl::report::Options { listen: std::time::Duration::from_secs(seconds), query };
             print!("{}", eposctl::report::build(&opts, |m| eprintln!("{m}")));
@@ -293,7 +395,13 @@ fn run(cli: Cli) -> std::io::Result<()> {
 
     let ch = ApoChannel::open(cli.device)?;
     let written = match cli.cmd {
-        Cmd::List | Cmd::Monitor { .. } | Cmd::Info | Cmd::Sidetone { .. } | Cmd::Report { .. } | Cmd::Audio { .. } => {
+        Cmd::List
+        | Cmd::Monitor { .. }
+        | Cmd::Info
+        | Cmd::Sidetone { .. }
+        | Cmd::Report { .. }
+        | Cmd::Audio { .. }
+        | Cmd::Raw { .. } => {
             unreachable!()
         }
         Cmd::EqImport { mic, .. } => {

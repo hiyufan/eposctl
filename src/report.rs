@@ -1,8 +1,9 @@
 //! `eposctl report`: a read-only summary of what eposctl can see, for bug
 //! reports and for adding support for other EPOS models.
 //!
-//! Nothing is written to the headset or the driver. The serial number is never
-//! included: HID paths are omitted and serial-number frames are redacted.
+//! Nothing is written to the headset or the driver. The serial number and
+//! Bluetooth address are never included: HID paths are omitted and those
+//! frames are redacted.
 
 use std::fmt::Write as _;
 use std::sync::mpsc;
@@ -46,7 +47,16 @@ fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect::<Vec<_>>().join(" ")
 }
 
-fn describe(f: &Frame) -> String {
+/// Responses that identify the unit (serial number, Bluetooth address): their
+/// values are never printed.
+const PRIVATE: [(u16, u16); 2] = [(0x01, 0x0B), (0x06, 0x14)];
+
+/// One-line description of a frame, with identifying values redacted.
+pub fn describe(f: &Frame) -> String {
+    let w = f.words();
+    if w.len() > 2 && PRIVATE.contains(&(w[0], w[1])) {
+        return format!("words=[{:04x}, {:04x}, <redacted>]", w[0], w[1]);
+    }
     match f.decode() {
         Message::SerialNumber(_) => "SerialNumber(<redacted>)".into(),
         Message::Unknown => format!("words={:04x?}", f.words()),

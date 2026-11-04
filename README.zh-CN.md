@@ -161,6 +161,7 @@ eposctl info                     # 型号、序列号、固件、电量、侧音
 eposctl sidetone [0-255]         # 查看或设置侧音
 eposctl monitor [--raw]          # 打印耳机事件（只读）
 eposctl report [--query]         # 生成只读的设备报告，用于提 issue
+eposctl raw --probe              # 只读的 HID 查询，用于研究协议
 
 eposctl audio                    # Windows 播放/录音设备，* 为默认
 eposctl audio default speaker    # 设为默认设备（名称的一部分即可）

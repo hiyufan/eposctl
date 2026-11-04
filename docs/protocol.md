@@ -173,12 +173,13 @@ service's query burst right after the headset reconnected):
 | `0x0004` | `0A` | `0B` | `status` | sidetone set acknowledged (0) |
 | `0x010F` | `0A` | `F0` | `2, raw` | sidetone changed. The official slider at 0 gave `0xFF`, at max gave `0x00`, mid gave `0x8B` |
 | `0x010F` | `17` | `07` | `0/1` | ANC off/on (headset button) |
-| `0x0004` | `0A` | `0C` | `6` | unknown, queried on connect |
-| `0x0004` | `0A` | `12` | `1` | unknown, queried on connect |
-| `0x0004` | `01` | `20` | `1` | unknown, queried on connect |
-| `0x0004` | `01` | `14` | `0x0101` | unknown, queried on connect |
-| `0x0004` | `06` | `14` | `0x6c, 0x7532, 0x94, 0x16` | unknown, queried on connect |
+| `0x0004` | `0A` | `0C` | `6` | sidetone level, queried on connect |
+| `0x0004` | `0A` | `12` | `1` | noise reduction level, queried on connect |
+| `0x0004` | `01` | `20` | `1` | read side of setter `01/1F`, meaning unknown; queried on connect |
+| `0x0004` | `01` | `14` | `0x0101` | PID number (`parsePIDNumber`), queried on connect |
+| `0x0004` | `06` | `14` | 4 words | Bluetooth address (`parseBDAddr`), queried on connect. Identifies the unit; eposctl redacts it |
 | `0x01FF` | `08` | `F0` | `3, 0…` | unknown, seen once when other headset buttons were pressed |
+| `0x3005` | (request's) | (request's) | none | from node 1 (the dongle) right after each request while the headset was off; probably "not delivered". Whether it also comes while the headset is on is not checked yet |
 
 The service also logs internal opcode numbers when a write fails (0, 1, 3, 4,
 14, 16, 19, 20, 27); these are enum values inside the service, not wire values.
@@ -201,28 +202,28 @@ Recovered with Ghidra 12.1.4 from `EPOSGamingSuiteService` 1.12.2
 | 0 | `01, 03` | firmware version | verified by eposctl |
 | 1 | `01, 0B` | serial number | verified by eposctl |
 | 2 | `09, 01` | product name | verified by eposctl |
-| 3 | `06, 14` | (BD address?) | answered on connect |
-| 4 | `01, 09` | | |
-| 5 | `01, 0A` | | |
-| 6 | `01, 0D` | | |
-| 7 | `01, 06` | | |
-| 9 | `06, 09` + 10 zero bytes | | |
-| 10 | `06, 13` | | |
-| 12 | `06, 27` | | |
+| 3 | `06, 14` | Bluetooth address (`parseBDAddr`) | answered on connect |
+| 4 | `01, 09` | sub-devices connected (`parsesubDevicesConnected`) | |
+| 5 | `01, 0A` | no parser ("Opcode not supported"); may be an action | not sent |
+| 6 | `01, 0D` | firmware update type (`parseDfuType`) | not sent |
+| 7 | `01, 06` | **enter firmware update mode** (`parseEnterDfu`) | never sent; `eposctl raw` refuses it |
+| 9 | `06, 09` + 10 zero bytes | no parser; the 10-byte argument suggests a pairing/connect action | not sent |
+| 10 | `06, 13` | no parser; may be an action | not sent |
+| 12 | `06, 27` | Bluetooth name (`parseDeviceBtName`) | |
 | 14 | `12, 03` | battery percent (`GetBatPercentage` reads offsets 0x11–0x12) | verified by eposctl |
 | 16 | `0A, 0C` | get sidetone (`GetSideToneGain` reads offset 0x11) | verified by eposctl |
 | 17 | `0A, 0B` + value | set sidetone | verified by eposctl (ack status 0, read-back matches) |
 | 18 | `0A, 11` + value | set noise reduction level (inferred: pairs with 19) | not tried |
 | 19 | `0A, 12` | get noise reduction level (`GetNoiseReductionLevel` reads offset 0x11); returns `1` on H3PRO | read by eposctl |
-| 20 | `01, 14` | | answered on connect (`0x0101`) |
-| 21 | `08, F0` | | |
+| 20 | `01, 14` | PID number (`parsePIDNumber`) | answered on connect (`0x0101`) |
+| 21 | `08, F0` | no parser | not sent |
 | 22 | `0A, 16` + value | set latency level (inferred: pairs with 23) | not tried |
 | 23 | `0A, 17` | get latency level (`GetLatencyLevel` reads offset 0x13, signed) | no response on H3PRO |
-| 24 | `06, 32` + value | setter, unknown | |
-| 25 | `06, 11` | | |
-| 26 | `01, 1F` + value | setter, unknown | |
-| 27 | `01, 20` | | answered on connect (`1`) |
-| 28 | `06, 1C` | | |
+| 24 | `06, 32` + value | remote device info (`GetRemoteDeviceInfo`); the value is probably an index, so a query rather than a setter (inferred) | |
+| 25 | `06, 11` | number of link keys, i.e. paired devices (`GetNbrLinkKeys`) | |
+| 26 | `01, 1F` + value | setter; its reply is parsed like 27 (byte at offset 0x11) | not tried |
+| 27 | `01, 20` | getter for 26 (byte at offset 0x11), meaning unknown | answered on connect (`1`) |
+| 28 | `06, 1C` | reply is not parsed for a value (case 28 yields the string "0"); may be an action | not sent |
 
 The meaning of opcodes 18/19/22/23 comes from the response parser: the
 service's response dispatcher switches on the internal opcode (jump table at
@@ -231,6 +232,15 @@ VA `0x4C8DF0`), and case 19 calls `GetNoiseReductionLevel`, case 23
 value ranges are not known; the strings of other device families
 (`NoiseReductionOff/Average/Max`, `BtMinLinkLatency/BtMaxLinkLatency`) suggest
 small enums, so `1` from opcode 19 may mean "average". This is a guess.
+
+The other parser names (`parseBDAddr`, `parsesubDevicesConnected`,
+`parseDfuType`, `parseEnterDfu`, `parseDeviceBtName`, `parsePIDNumber`,
+`GetRemoteDeviceInfo`, `GetNbrLinkKeys`) come from the same dispatcher
+(`parseDatagram` @ `0x4c8330`): cases 0–4, 6, 7, 12, 14, 16, 17–19, 20, 22–23,
+24, 25, 26–27 call a parser; cases 5, 8–11, 13, 15 and 21 fall to "Opcode not
+supported". `eposctl raw --probe` sends only the getter-style requests;
+`eposctl raw` refuses opcode 7 and needs `--write` for values and for the
+requests without a parser.
 
 **Auto sleep** does not use the opcode table. `CCapricornDatagram::DeviceAutoSleepLevel`
 (`0x4CF820`, slot 3 of the vtable at `0x828DB0`) builds its own 8-byte body and

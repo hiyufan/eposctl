@@ -64,6 +64,34 @@ impl Headset {
         }
     }
 
+    /// Write one request frame with `body`, after moving anything already queued
+    /// aside so that only fresh responses are matched.
+    fn send(&self, body: Vec<u8>) -> io::Result<()> {
+        let req = Frame { version: 1, kind: kind::RESPONSE, node: self.node, body };
+        while let Some(report) = self.dev.read(0)? {
+            if let Ok(f) = Frame::parse(&report) {
+                self.stash(f);
+            }
+        }
+        self.dev.write(&req.encode())
+    }
+
+    /// Send a request made of u16 `words` (group, command, values...) and collect
+    /// every frame that arrives within `window`. For research: the reply to an
+    /// unknown command may not echo its group and command.
+    pub fn exchange(&self, words: &[u16], window: Duration) -> io::Result<Vec<Frame>> {
+        self.send(words.iter().flat_map(|w| w.to_le_bytes()).collect())?;
+        let deadline = Instant::now() + window;
+        let mut got = Vec::new();
+        while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+            let Some(report) = self.dev.read(left.as_millis().max(1) as u32)? else { break };
+            if let Ok(f) = Frame::parse(&report) {
+                got.push(f);
+            }
+        }
+        Ok(got)
+    }
+
     /// Send `(group, command[, value])` and wait for the matching response frame.
     pub fn request(&self, (group, command): (u16, u16), value: Option<u16>, timeout: Duration) -> io::Result<Frame> {
         let mut body = Vec::with_capacity(6);
@@ -72,14 +100,7 @@ impl Headset {
         if let Some(v) = value {
             body.extend_from_slice(&v.to_le_bytes());
         }
-        let req = Frame { version: 1, kind: kind::RESPONSE, node: self.node, body };
-        // Move anything already queued aside so we match only fresh responses.
-        while let Some(report) = self.dev.read(0)? {
-            if let Ok(f) = Frame::parse(&report) {
-                self.stash(f);
-            }
-        }
-        self.dev.write(&req.encode())?;
+        self.send(body)?;
 
         let deadline = Instant::now() + timeout;
         while let Some(left) = deadline.checked_duration_since(Instant::now()) {

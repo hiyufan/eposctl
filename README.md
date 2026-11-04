@@ -177,6 +177,7 @@ eposctl info                     # name, serial, firmware, battery, sidetone (HI
 eposctl sidetone [0-255]         # show or set sidetone level
 eposctl monitor [--raw]          # print headset events (read-only)
 eposctl report [--query]         # read-only device report for a GitHub issue
+eposctl raw --probe              # read-only HID queries, for protocol research
 
 eposctl audio                    # Windows playback/recording devices, * = default
 eposctl audio default speaker    # make a device the default (part of its name)
