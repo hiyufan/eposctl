@@ -48,9 +48,8 @@ RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
-#if FileExists(CompilerPath + "Languages\ChineseSimplified.isl")
-Name: "chinesesimplified"; MessagesFile: "compiler:Default.isl,compiler:Languages\ChineseSimplified.isl"
-#endif
+; ChineseSimplified.isl: from Inno Setup's repository (tag is-6_7_1, Files\Languages\Unofficial).
+Name: "chinesesimplified"; MessagesFile: "compiler:Default.isl,ChineseSimplified.isl"
 
 [CustomMessages]
 english.AutoStart=Start eposctl with Windows (in the tray)
@@ -61,7 +60,6 @@ english.Downloading=Downloading Equalizer APO...
 english.DownloadFailed=Equalizer APO could not be downloaded: %1%n%nYou can get it later from https://sourceforge.net/projects/equalizerapo/
 english.EqApoRunFailed=The Equalizer APO setup did not run (code %1).
 
-#if FileExists(CompilerPath + "Languages\ChineseSimplified.isl")
 chinesesimplified.AutoStart=开机时启动 eposctl（在托盘运行）
 chinesesimplified.EqApoTask=下载并安装 Equalizer APO {#EqApoVersion}（约 12 MB），没有 EPOS 驱动也能用 EQ
 chinesesimplified.NoDriverTitle=未找到 EPOS 音效驱动
@@ -69,7 +67,6 @@ chinesesimplified.NoDriverText=这台电脑没有安装 EPOS 音效驱动（EPOS
 chinesesimplified.Downloading=正在下载 Equalizer APO……
 chinesesimplified.DownloadFailed=Equalizer APO 下载失败：%1%n%n之后可以从 https://sourceforge.net/projects/equalizerapo/ 自行下载。
 chinesesimplified.EqApoRunFailed=Equalizer APO 安装程序没有运行（代码 %1）。
-#endif
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

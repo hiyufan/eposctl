@@ -1943,12 +1943,13 @@ impl eframe::App for App {
             .show(ui, |ui| {
                 self.header(ui, &d);
                 ui.add_space(16.0);
-                let mut area = egui::ScrollArea::vertical().auto_shrink([false, false]);
+                let area = egui::ScrollArea::vertical().auto_shrink([false, false]);
                 // Debug builds: `EPOSCTL_SCROLL=<px>` scrolls the page (for screenshots).
                 #[cfg(debug_assertions)]
-                if let Some(y) = std::env::var("EPOSCTL_SCROLL").ok().and_then(|v| v.parse::<f32>().ok()) {
-                    area = area.vertical_scroll_offset(y);
-                }
+                let area = match std::env::var("EPOSCTL_SCROLL").ok().and_then(|v| v.parse::<f32>().ok()) {
+                    Some(y) => area.vertical_scroll_offset(y),
+                    None => area,
+                };
                 area.show(ui, |ui| {
                     match self.page {
                         Page::Sound => self.page_sound(ui),
