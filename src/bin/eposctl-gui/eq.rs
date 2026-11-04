@@ -43,7 +43,8 @@ pub fn editor(
     let x_of = |i: usize| plot.left() + plot.width() * i as f32 / (n - 1) as f32;
     let y_of = |db: f32| egui::remap(db, MIN_DB..=MAX_DB, plot.bottom()..=plot.top());
     let db_of = |y: f32| egui::remap_clamp(y, plot.bottom()..=plot.top(), MIN_DB..=MAX_DB);
-    let nearest = |x: f32| ((x - plot.left()) / plot.width() * (n - 1) as f32).round().clamp(0.0, (n - 1) as f32) as usize;
+    let nearest =
+        |x: f32| ((x - plot.left()) / plot.width() * (n - 1) as f32).round().clamp(0.0, (n - 1) as f32) as usize;
 
     // Grid.
     let label_font = theme::font(11.0);
@@ -62,7 +63,13 @@ pub fn editor(
         );
     }
     for i in 0..n {
-        painter.text(pos2(x_of(i), rect.bottom() - 4.0), Align2::CENTER_BOTTOM, band_label(i), label_font.clone(), SECONDARY);
+        painter.text(
+            pos2(x_of(i), rect.bottom() - 4.0),
+            Align2::CENTER_BOTTOM,
+            band_label(i),
+            label_font.clone(),
+            SECONDARY,
+        );
     }
     painter.text(pos2(plot.left() - 10.0, rect.bottom() - 4.0), Align2::RIGHT_BOTTOM, "Hz", label_font.clone(), FAINT);
 
@@ -77,42 +84,46 @@ pub fn editor(
     let hovered = pointer.filter(|p| plot.expand2(vec2(12.0, 12.0)).contains(*p)).map(|p| nearest(p.x));
 
     if resp.drag_started()
-        && let Some(p) = resp.interact_pointer_pos() {
-            dragging = Some(nearest(p.x));
-            selected = dragging;
-            resp.request_focus();
-        }
+        && let Some(p) = resp.interact_pointer_pos()
+    {
+        dragging = Some(nearest(p.x));
+        selected = dragging;
+        resp.request_focus();
+    }
     if let (Some(i), Some(p)) = (dragging, resp.interact_pointer_pos())
-        && resp.dragged() {
-            let v = (db_of(p.y) * 10.0).round() / 10.0;
-            if v != gains[i] {
-                gains[i] = v;
-                changed = true;
-            }
+        && resp.dragged()
+    {
+        let v = (db_of(p.y) * 10.0).round() / 10.0;
+        if v != gains[i] {
+            gains[i] = v;
+            changed = true;
         }
+    }
     if resp.drag_stopped() {
         dragging = None;
     }
     if resp.clicked()
-        && let Some(p) = resp.interact_pointer_pos() {
-            let i = nearest(p.x);
-            selected = Some(i);
-            resp.request_focus();
-            // A click on the column (not on the node) moves the node there.
-            let v = (db_of(p.y) * 10.0).round() / 10.0;
-            if (y_of(gains[i]) - p.y).abs() > 10.0 && v != gains[i] {
-                gains[i] = v;
-                changed = true;
-            }
+        && let Some(p) = resp.interact_pointer_pos()
+    {
+        let i = nearest(p.x);
+        selected = Some(i);
+        resp.request_focus();
+        // A click on the column (not on the node) moves the node there.
+        let v = (db_of(p.y) * 10.0).round() / 10.0;
+        if (y_of(gains[i]) - p.y).abs() > 10.0 && v != gains[i] {
+            gains[i] = v;
+            changed = true;
         }
+    }
     if resp.double_clicked()
-        && let Some(p) = resp.interact_pointer_pos() {
-            let i = nearest(p.x);
-            if gains[i] != 0.0 {
-                gains[i] = 0.0;
-                changed = true;
-            }
+        && let Some(p) = resp.interact_pointer_pos()
+    {
+        let i = nearest(p.x);
+        if gains[i] != 0.0 {
+            gains[i] = 0.0;
+            changed = true;
         }
+    }
     if resp.has_focus() {
         let sel = selected.get_or_insert(n / 2);
         let (up, down, left, right, big) = ui.input(|i| {
@@ -131,7 +142,13 @@ pub fn editor(
         if right && *sel + 1 < n {
             *sel += 1;
         }
-        let delta = if up { step } else if down { -step } else { 0.0 };
+        let delta = if up {
+            step
+        } else if down {
+            -step
+        } else {
+            0.0
+        };
         if delta != 0.0 {
             let v = ((gains[*sel] + delta) * 2.0).round() / 2.0;
             gains[*sel] = v.clamp(MIN_DB, MAX_DB);
@@ -233,11 +250,7 @@ pub fn editor(
     }
 
     if resp.hovered() {
-        ui.ctx().set_cursor_icon(if dragging.is_some() {
-            egui::CursorIcon::Grabbing
-        } else {
-            egui::CursorIcon::Grab
-        });
+        ui.ctx().set_cursor_icon(if dragging.is_some() { egui::CursorIcon::Grabbing } else { egui::CursorIcon::Grab });
     }
     changed
 }

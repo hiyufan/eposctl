@@ -69,10 +69,14 @@ fn db(x: f64) -> f64 {
 fn record(id: &str, secs: f64) -> windows::core::Result<(Vec<f32>, u32)> {
     let end = Instant::now() + Duration::from_secs_f64(secs);
     let (mut out, mut sr) = (Vec::new(), 48000);
-    eposctl::audio::capture(id, || Instant::now() < end, |x, rate| {
-        out.extend_from_slice(x);
-        sr = rate;
-    })?;
+    eposctl::audio::capture(
+        id,
+        || Instant::now() < end,
+        |x, rate| {
+            out.extend_from_slice(x);
+            sr = rate;
+        },
+    )?;
     Ok((out, sr))
 }
 
@@ -165,9 +169,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (x, rate) = record(&ep.id, secs)?;
                 let s = analyse(&x, rate);
                 let n = (rate / 50) as usize;
-                blocks[i].extend(x.chunks_exact(n).map(|b| {
-                    db((b.iter().map(|&v| (v as f64) * (v as f64)).sum::<f64>() / n as f64).sqrt())
-                }));
+                blocks[i].extend(
+                    x.chunks_exact(n)
+                        .map(|b| db((b.iter().map(|&v| (v as f64) * (v as f64)).sum::<f64>() / n as f64).sqrt())),
+                );
                 eprintln!(
                     "round {} {label:<40} rms {:6.1}  low {:6.1}  high {:6.1}  peak {:6.1} dBFS  zero {:4.0}%",
                     r + 1,

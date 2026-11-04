@@ -35,10 +35,8 @@ fn file(save: bool, default_name: &str, filter: &str, ext: &str) -> Option<PathB
     ofn.lpstrFile = buf.as_mut_ptr();
     ofn.nMaxFile = buf.len() as u32;
     ofn.lpstrDefExt = ext.as_ptr();
-    ofn.Flags = OFN_EXPLORER
-        | OFN_NOCHANGEDIR
-        | OFN_PATHMUSTEXIST
-        | if save { OFN_OVERWRITEPROMPT } else { OFN_FILEMUSTEXIST };
+    ofn.Flags =
+        OFN_EXPLORER | OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST | if save { OFN_OVERWRITEPROMPT } else { OFN_FILEMUSTEXIST };
     let ok = unsafe { if save { GetSaveFileNameW(&mut ofn) } else { GetOpenFileNameW(&mut ofn) } };
     if ok == 0 {
         return None; // cancelled (or failed)

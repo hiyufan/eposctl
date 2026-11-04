@@ -41,9 +41,9 @@ fn timeout_err(what: &str) -> io::Error {
 impl Headset {
     pub fn open() -> io::Result<Self> {
         let infos = find_vendor_collections();
-        let info = infos.first().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::NotFound, "no EPOS vendor HID collection found")
-        })?;
+        let info = infos
+            .first()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no EPOS vendor HID collection found"))?;
         Ok(Self { dev: HidDevice::open_rw(info)?, node: HEADSET_NODE, pending: Default::default() })
     }
 

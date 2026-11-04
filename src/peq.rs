@@ -221,7 +221,8 @@ impl Peq {
         for (n, b) in self.bands.iter().enumerate() {
             let state = if b.on { "ON" } else { "OFF" };
             let gain = if b.kind.has_gain() { format!(" Gain {:.1} dB", b.gain) } else { String::new() };
-            let _ = writeln!(s, "Filter {}: {state} {} Fc {:.1} Hz{gain} Q {:.3}", n + 1, b.kind.apo_name(), b.freq, b.q);
+            let _ =
+                writeln!(s, "Filter {}: {state} {} Fc {:.1} Hz{gain} Q {:.3}", n + 1, b.kind.apo_name(), b.freq, b.q);
         }
         s
     }

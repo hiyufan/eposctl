@@ -18,12 +18,9 @@ use std::ptr;
 
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, WAIT_ABANDONED, WAIT_OBJECT_0};
 use windows_sys::Win32::System::Memory::{
-    FILE_MAP_READ, FILE_MAP_WRITE, MEMORY_MAPPED_VIEW_ADDRESS, MapViewOfFile, OpenFileMappingW,
-    UnmapViewOfFile,
+    FILE_MAP_READ, FILE_MAP_WRITE, MEMORY_MAPPED_VIEW_ADDRESS, MapViewOfFile, OpenFileMappingW, UnmapViewOfFile,
 };
-use windows_sys::Win32::System::Threading::{
-    OpenEventW, OpenMutexW, ReleaseMutex, SetEvent, WaitForSingleObject,
-};
+use windows_sys::Win32::System::Threading::{OpenEventW, OpenMutexW, ReleaseMutex, SetEvent, WaitForSingleObject};
 
 use crate::objdir;
 
@@ -387,16 +384,10 @@ impl ApoChannel {
                 return Err(last());
             }
             let view = view as *mut u8;
-            let mutex = OwnedHandle(OpenMutexW(
-                SYNCHRONIZE | MUTEX_MODIFY_STATE,
-                0,
-                wide(&format!("{base}_mutex")).as_ptr(),
-            ));
-            let event = OwnedHandle(OpenEventW(
-                SYNCHRONIZE | EVENT_MODIFY_STATE,
-                0,
-                wide(&format!("{base}_event")).as_ptr(),
-            ));
+            let mutex =
+                OwnedHandle(OpenMutexW(SYNCHRONIZE | MUTEX_MODIFY_STATE, 0, wide(&format!("{base}_mutex")).as_ptr()));
+            let event =
+                OwnedHandle(OpenEventW(SYNCHRONIZE | EVENT_MODIFY_STATE, 0, wide(&format!("{base}_event")).as_ptr()));
             if mutex.0.is_null() || event.0.is_null() {
                 let err = last();
                 UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view.cast() });

@@ -4,9 +4,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use eframe::egui::{
-    self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle,
-};
+use eframe::egui::{self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle};
 
 pub const BG: Color32 = Color32::from_rgb(0x17, 0x18, 0x1E);
 pub const PANEL: Color32 = Color32::from_rgb(0x1F, 0x20, 0x27);

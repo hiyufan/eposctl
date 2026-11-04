@@ -31,13 +31,7 @@ impl Preset {
 }
 
 pub const FACTORY: &[Preset] = &[
-    Preset {
-        name: "flat",
-        speaker_eq: [0.0; BANDS],
-        reverb: 0.0,
-        noise_gate: Some(100.0 / 255.0),
-        surround: false,
-    },
+    Preset { name: "flat", speaker_eq: [0.0; BANDS], reverb: 0.0, noise_gate: Some(100.0 / 255.0), surround: false },
     Preset {
         name: "music",
         speaker_eq: [6.0, 3.97, 0.85, -0.43, -1.04, -0.47, 0.66, 4.02, 6.0],
