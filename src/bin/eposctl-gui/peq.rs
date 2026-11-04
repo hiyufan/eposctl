@@ -25,10 +25,10 @@ pub struct Changed {
     pub settled: bool,
 }
 
-/// The curve plot with one draggable point per band. `achieved` is the
-/// headset's current 9-band setting, drawn as the curve actually heard
-/// (`None` when the bands go to Equalizer APO instead).
-pub fn plot(ui: &mut Ui, peq: &mut Peq, achieved: Option<&[f32; BANDS]>, height: f32) -> Changed {
+/// The curve plot with one draggable point per band. `fitted` is the 9-band
+/// fit of the curve and the level shift it was given, drawn as what the
+/// headset makes of it (`None` when the bands go to Equalizer APO instead).
+pub fn plot(ui: &mut Ui, peq: &mut Peq, fitted: Option<(&[f32; BANDS], f32)>, height: f32) -> Changed {
     let mut out = Changed::default();
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click_and_drag());
     let painter = ui.painter_at(rect.expand(2.0));
@@ -63,12 +63,13 @@ pub fn plot(ui: &mut Ui, peq: &mut Peq, achieved: Option<&[f32; BANDS]>, height:
             })
             .collect()
     };
-    if let Some(g) = achieved {
-        let heard = pts(&|f| epos_db(g, f));
+    if let Some((g, shift)) = fitted {
+        // Undo the shift so the fit lines up with the target it was made from.
+        let heard = pts(&|f| epos_db(g, f) - shift as f64);
         painter.line(heard, Stroke::new(2.5, ACCENT));
     }
     let target = pts(&|f| peq.db_at(f));
-    let target_color = if achieved.is_some() { TEXT.gamma_multiply(0.55) } else { ACCENT };
+    let target_color = if fitted.is_some() { TEXT.gamma_multiply(0.55) } else { ACCENT };
     painter.add(egui::Shape::dashed_line(&target, Stroke::new(1.5, target_color), 5.0, 4.0));
 
     // Points: drag to move (frequency, gain), scroll to change Q.
@@ -165,7 +166,7 @@ pub fn table(ui: &mut Ui, s: &Strings, peq: &mut Peq) -> Changed {
             if widgets::switch(ui, &mut b.on, true).changed() {
                 out.settled = true;
             }
-            if ui.add(egui::Button::new(egui::RichText::new("✕").color(DANGER)).frame(false)).clicked() {
+            if ui.add(egui::Button::new(egui::RichText::new("×").font(theme::font(18.0)).color(DANGER)).frame(false)).clicked() {
                 remove = Some(i);
             }
             ui.end_row();

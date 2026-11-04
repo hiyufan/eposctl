@@ -126,7 +126,11 @@ pub fn install_style(ctx: &egui::Context) {
 
     w.open = w.active;
 
-    ctx.set_visuals(v);
+    // Always dark: with the default "follow the system" preference, a light
+    // Windows theme switched egui's stock widgets (combo boxes, drag values,
+    // text fields, menus) to light visuals inside the dark panels.
+    ctx.set_theme(egui::Theme::Dark);
+    ctx.set_visuals_of(egui::Theme::Dark, v);
     ctx.all_styles_mut(|s| {
         s.text_styles = [
             (TextStyle::Small, font(12.0)),

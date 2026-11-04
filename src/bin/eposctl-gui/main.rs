@@ -879,17 +879,25 @@ impl App {
             });
             widgets::desc(ui, s.peq_desc);
             ui.add_space(6.0);
-            let achieved = (cfg.output == PeqOutput::Epos).then_some(current);
-            let c = peq::plot(ui, &mut cfg.peq, achieved.as_ref(), 220.0);
+            let fit = cfg.peq.to_epos();
+            let fitted = (cfg.output == PeqOutput::Epos).then_some((&fit.gains, fit.shift));
+            let c = peq::plot(ui, &mut cfg.peq, fitted, 220.0);
             changed.curve |= c.curve;
             changed.settled |= c.settled;
             if cfg.peq.bands.is_empty() {
                 widgets::desc(ui, s.peq_empty);
             } else if cfg.output == PeqOutput::Epos {
-                let shift = cfg.peq.to_epos().shift;
-                let (db, hz) = peq::worst_gap(&cfg.peq, &current, shift);
+                let (db, hz) = peq::worst_gap(&cfg.peq, &fit.gains, fit.shift);
                 let hz = if hz >= 1000.0 { format!("{:.1} kHz", hz / 1000.0) } else { format!("{hz:.0} Hz") };
                 widgets::desc(ui, &s.peq_fit_note.replace("{db}", &format!("{db:.1}")).replace("{hz}", &hz));
+                // Saved bands are not applied until edited; offer it when the headset differs.
+                let applied = current.iter().zip(&fit.gains).all(|(a, b)| (a - b).abs() < 0.05);
+                if !applied && !changed.curve {
+                    ui.add_space(4.0);
+                    if widgets::primary(ui, s.peq_apply).clicked() {
+                        changed.curve = true;
+                    }
+                }
             } else {
                 widgets::desc(ui, s.peq_apo_note);
             }
@@ -1921,7 +1929,13 @@ impl eframe::App for App {
             .show(ui, |ui| {
                 self.header(ui, &d);
                 ui.add_space(16.0);
-                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                let mut area = egui::ScrollArea::vertical().auto_shrink([false, false]);
+                // Debug builds: `EPOSCTL_SCROLL=<px>` scrolls the page (for screenshots).
+                #[cfg(debug_assertions)]
+                if let Some(y) = std::env::var("EPOSCTL_SCROLL").ok().and_then(|v| v.parse::<f32>().ok()) {
+                    area = area.vertical_scroll_offset(y);
+                }
+                area.show(ui, |ui| {
                     match self.page {
                         Page::Sound => self.page_sound(ui),
                         Page::Mic => self.page_mic(ui, &d),
