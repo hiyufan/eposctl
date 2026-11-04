@@ -37,7 +37,7 @@ foreach ($tag in $tags) {
         if ($gl) { break }
         Write-Host "Mesa $tag ($build): no x64 opengl32.dll"
     }
-    if ($gl) { Write-Host "Mesa $tag: using $($archive.Name)"; break }
+    if ($gl) { Write-Host "Mesa ${tag}: using $($archive.Name)"; break }
 }
 if (-not $gl) { throw "no Mesa release with an x64 opengl32.dll" }
 # Only the WGL driver: an EGL library next to the exe could be picked up instead.
