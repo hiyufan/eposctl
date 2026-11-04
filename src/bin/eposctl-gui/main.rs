@@ -136,8 +136,8 @@ struct App {
     /// Program name typed into the voice-apps field.
     mix_input: String,
 
-    /// Original mic monitor flags while we have switched them on for the meters.
-    monitors: Option<[bool; 3]>,
+    /// Original meter flag while we have switched it on for the meters.
+    monitors: Option<bool>,
     meters: Meters,
     /// We hid the window (tray). Tracked here because the viewport's own
     /// visibility info does not reliably update after `Visible(false)`.
@@ -396,22 +396,23 @@ impl App {
         self.monitors = None;
     }
 
-    /// The APO only updates its level meters while the mic monitor flags are
-    /// set. Switch them on while the Mic page is on screen, as the official app
-    /// does, and put back whatever was there before.
+    /// The APO only updates its level meters while `mic_meters_enabled` is set.
+    /// Switch it on while the Mic page is on screen and put back whatever was
+    /// there before. (The official app also switched on the mic EQ and the gate
+    /// here, so they only acted while its mic page was open.)
     fn set_monitoring(&mut self, on: bool) {
         let Some(ch) = &self.apo else { return };
         match (on, self.monitors) {
             (true, None) => {
                 if let Ok(cur) = ch.read() {
-                    let original = cur.mic_monitors();
-                    if ch.modify(|s| s.set_mic_monitors([true; 3])).is_ok() {
+                    let original = cur.mic_meters();
+                    if ch.modify(|s| s.set_mic_meters(true)).is_ok() {
                         self.monitors = Some(original);
                     }
                 }
             }
             (false, Some(original)) => {
-                let _ = ch.modify(|s| s.set_mic_monitors(original));
+                let _ = ch.modify(|s| s.set_mic_meters(original));
                 self.monitors = None;
             }
             _ => {}

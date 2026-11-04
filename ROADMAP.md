@@ -50,8 +50,10 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
       a level factor), to fit imported curves exactly instead of sampling them
 - [x] Offsets of the remaining APO fields (`hrtf_preset`, noise reduction, HPF, speech
       compressor; from the settings serialiser in `EAPO.dll`)
-- [ ] Test what they do on the H3PRO, starting with `noise_gate_enabled` (`0x44`): the
-      gate may only act while the mic page is open
+- [x] Measure them on the H3PRO: the gate and the mic EQ need their enable flags
+      (fixed); noise reduction and HPF do nothing measurable; the compressor (preset 2)
+      makes speech much quieter
+- [ ] `hrtf_preset` values and the other compressor presets
 
 ## Later
 

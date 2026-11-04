@@ -43,7 +43,17 @@ Offsets are from the start of the section. Floats are little-endian IEEE-754.
 "named" = the field's name and width come from the settings (de)serialiser in
 `EAPO.dll` (RVA `0x2E6650` reads each field from the registry by name into
 `[struct + offset]`, RVA `0x2E6C20` writes them back); its effect on the H3PRO
-has not been tested. `eposctl status --raw` prints them.
+has not been tested unless marked "measured". `eposctl status --raw` prints them.
+
+"measured" = recorded from the headset mic through Windows while switching the
+field (`examples/miclab.rs`, 2026-11-04, H3PRO Hybrid). The official UI set
+`0x42`, `0x44` and `0x46` only while its microphone page was open and cleared
+them on leaving, so its mic EQ and gate only acted on that page. eposctl
+switches `0x42` and `0x44` with the EQ gains and the gate amount instead.
+
+Gate amount: with `0x44` on, 35 % passed normal speech (peaks around -30 dBFS)
+but blocked quiet speech (peaks around -40 dBFS); 100 % blocked both. The exact
+percent-to-dB mapping is not known.
 
 | Offset | Type | Meaning | Status |
 |---|---|---|---|
@@ -51,9 +61,11 @@ has not been tested. `eposctl status --raw` prints them.
 | `0x04` | u32 | `4` in every capture | unknown |
 | `0x40` | u8 | virtual 3D surround enabled; `EAPO.dll` calls it `direct_sound_enabled` | observed |
 | `0x41` | u8 | `speaker_eq_enabled`; `1` in every capture | named |
-| `0x42`, `0x44`, `0x46` | u8 | `mic_eq_enabled`, `noise_gate_enabled`, `mic_meters_enabled`. The official UI sets all three while it shows the microphone page, and the APO only updates the meters at `0x440` while they are set (observed). Outside that page they were `0`, so whether the mic EQ and the gate act at other times is **open** | observed + named |
-| `0x43` | u8 | `mic_nr_enabled` | named |
-| `0x47` | u8 | `mic_hpf_enabled` | named |
+| `0x42` | u8 | `mic_eq_enabled`: the mic EQ gains (`0x70`) only act while it is 1 | measured |
+| `0x44` | u8 | `noise_gate_enabled`: the gate amount (`0x98`) only acts while it is 1 | measured |
+| `0x46` | u8 | `mic_meters_enabled`: the APO updates the meters at `0x440` only while it is 1 **and** a program records from the mic | measured |
+| `0x43` | u8 | `mic_nr_enabled`; no measurable effect on the H3PRO | measured |
+| `0x47` | u8 | `mic_hpf_enabled`; no measurable effect on the H3PRO | measured |
 | `0x45` | u8 | `reverb_enabled`; always flipped together with `0x40` by the official UI | observed + named |
 | `0x4C` | f32[9] | speaker EQ gains in dB, -6..+6, lowest band first | observed |
 | `0x70` | f32[9] | microphone EQ gains in dB | observed (bands 1-8) |
@@ -62,7 +74,7 @@ has not been tested. `eposctl status --raw` prints them.
 | `0x9C` | u32 | `mic_eq_preset` | named |
 | `0xA0` | u32 | `mic_nr_preset` | named |
 | `0xA8` | u32 | `hrtf_preset` | named |
-| `0xB1` | u8 | `mic_speech_compressor_enabled` | named |
+| `0xB1` | u8 | `mic_speech_compressor_enabled`; with preset 2 it made speech about 20 dB quieter and gated pauses | measured |
 | `0xB4` | u32 | `mic_speech_compressor_preset`; `2` in every capture | named |
 | `0x440` | f32[15] | level meters in dB written by the APO; see below | observed |
 
@@ -285,7 +297,6 @@ on the device side and is not known.
 - Does the APO create the section itself when the EPOS service is not running?
   (`EAPO.dll` contains "Could not create shared memory", which suggests create-or-open.)
 - Meaning of `0x00`, `0x04`, `0x48`, `0xA4`, `0xAC`, `0xB0`, and the bytes between `0xB8` and `0x440`.
-- Whether the APO honours `mic_eq_enabled` / `noise_gate_enabled` (`0x42`, `0x44`): if it
-  does, the mic EQ and the gate only act while the mic page is open. Test: gate at
-  100 %, meters on, compare the mic level with `0x44` at 0 and at 1.
+- The gate's percent-to-dB threshold mapping (needs a steady test signal).
+- What the speech compressor presets other than 2 do; `hrtf_preset` values.
 - Whether the event must be signalled for the APO to pick up changes, or if it polls.

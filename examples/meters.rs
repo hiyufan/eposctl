@@ -2,9 +2,10 @@
 //!
 //! Samples the 15 meters at 20 Hz through three phases (silence, speaking,
 //! playback) and prints per-phase average and peak for each channel.
-//! The APO only updates the meters while the mic monitor flags are set, so
-//! they are switched on for the capture and restored afterwards
-//! (`--reset` clears them if an interrupted run left them on).
+//! The APO only updates the meters while `mic_meters_enabled` is set and a
+//! program is recording, so the flag is switched on for the capture and
+//! restored afterwards (`--reset` clears it if an interrupted run left it on).
+//! Keep a recording app open on the headset mic meanwhile.
 
 use std::time::{Duration, Instant};
 
@@ -20,16 +21,16 @@ fn main() -> std::io::Result<()> {
     let ch = ApoChannel::open(None)?;
     if std::env::args().any(|a| a == "--reset") {
         // Clear the flags, e.g. after an interrupted capture left them on.
-        ch.modify(|s| s.set_mic_monitors([false; 3]))?;
-        println!("mic monitor flags cleared");
+        ch.modify(|s| s.set_mic_meters(false))?;
+        println!("meter flag cleared");
         return Ok(());
     }
-    let original = ch.read()?.mic_monitors();
-    println!("device {}  mic monitor flags before: {original:?}", ch.device);
-    ch.modify(|s| s.set_mic_monitors([true; 3]))?;
+    let original = ch.read()?.mic_meters();
+    println!("device {}  meter flag before: {original}", ch.device);
+    ch.modify(|s| s.set_mic_meters(true))?;
     let result = capture(&ch);
-    ch.modify(|s| s.set_mic_monitors(original))?;
-    println!("mic monitor flags restored to {original:?}");
+    ch.modify(|s| s.set_mic_meters(original))?;
+    println!("meter flag restored to {original}");
     result
 }
 

@@ -46,16 +46,21 @@ pub mod layout {
     pub const SURROUND_ENABLED: usize = 0x40;
     /// u8 bool, `speaker_eq_enabled` (name from `EAPO.dll`; always 1).
     pub const SPEAKER_EQ_ENABLED: usize = 0x41;
-    /// u8 bools set while the official UI shows the microphone page (observed).
-    /// `EAPO.dll` names them `mic_eq_enabled`, `noise_gate_enabled` and
-    /// `mic_meters_enabled`.
-    pub const MIC_MONITOR_FLAGS: [usize; 3] = [0x42, 0x44, 0x46];
+    /// u8 bool, `mic_eq_enabled`. The mic EQ gains have no effect while it is 0
+    /// (measured: +6 dB on every band changed nothing with it off, +10 dB with it on).
+    pub const MIC_EQ_ENABLED: usize = 0x42;
+    /// u8 bool, `noise_gate_enabled`. The gate level has no effect while it is 0
+    /// (measured: gate at 100 % let room noise through with it off, muted it with it on).
+    pub const NOISE_GATE_ENABLED: usize = 0x44;
+    /// u8 bool, `mic_meters_enabled`. The APO updates the meters at `METERS` only
+    /// while it is set and a program is recording from the microphone (measured).
+    pub const MIC_METERS_ENABLED: usize = 0x46;
     /// u8 bool, `reverb_enabled` (name from `EAPO.dll`); the official UI toggles it
     /// together with surround (observed).
     pub const REVERB_ENABLED: usize = 0x45;
     /// Fields named by the settings (de)serialiser in `EAPO.dll`
-    /// (`0x1802e6650` / `0x1802e6c20`), with their width in bytes. Their effect on
-    /// the H3PRO is not verified.
+    /// (`0x1802e6650` / `0x1802e6c20`), with their width in bytes. Effects measured
+    /// on the H3PRO are noted on the constants above and in docs/protocol.md.
     pub const NAMED: [(&str, usize, usize); 15] = [
         ("direct_sound_enabled", 0x40, 1),
         ("speaker_eq_enabled", 0x41, 1),
@@ -147,8 +152,11 @@ impl Settings {
         self.bands(layout::MIC_EQ)
     }
 
+    /// Also switches the mic EQ on when any band is non-zero (and off when flat),
+    /// since the APO ignores the gains while `mic_eq_enabled` is 0.
     pub fn set_mic_eq(&mut self, gains: &[f32; layout::BANDS]) {
         self.set_bands(layout::MIC_EQ, gains);
+        self.bytes[layout::MIC_EQ_ENABLED] = gains.iter().any(|&g| g != 0.0) as u8;
     }
 
     pub fn speaker_eq_enabled(&self) -> bool {
@@ -169,8 +177,12 @@ impl Settings {
         self.f32_at(layout::NOISE_GATE_LEVEL)
     }
 
+    /// Also switches the gate on when the amount is above 0 (and off at 0), since
+    /// the APO ignores the amount while `noise_gate_enabled` is 0.
     pub fn set_noise_gate(&mut self, v: f32) {
-        self.set_f32(layout::NOISE_GATE_LEVEL, v.clamp(0.0, 1.0));
+        let v = v.clamp(0.0, 1.0);
+        self.set_f32(layout::NOISE_GATE_LEVEL, v);
+        self.bytes[layout::NOISE_GATE_ENABLED] = (v > 0.0) as u8;
     }
 
     pub fn surround(&self) -> bool {
@@ -187,16 +199,51 @@ impl Settings {
         self.u8_at(layout::REVERB_ENABLED) != 0
     }
 
-    pub fn mic_monitors(&self) -> [bool; 3] {
-        layout::MIC_MONITOR_FLAGS.map(|o| self.u8_at(o) != 0)
+    pub fn mic_eq_enabled(&self) -> bool {
+        self.u8_at(layout::MIC_EQ_ENABLED) != 0
     }
 
-    /// The APO only updates the level meters while these flags are set
-    /// (observed: meters froze when the official app cleared them on exit).
-    pub fn set_mic_monitors(&mut self, on: [bool; 3]) {
-        for (o, v) in layout::MIC_MONITOR_FLAGS.into_iter().zip(on) {
-            self.bytes[o] = v as u8;
+    pub fn noise_gate_enabled(&self) -> bool {
+        self.u8_at(layout::NOISE_GATE_ENABLED) != 0
+    }
+
+    pub fn mic_meters(&self) -> bool {
+        self.u8_at(layout::MIC_METERS_ENABLED) != 0
+    }
+
+    /// The APO only updates the level meters while this is set (and a program is
+    /// recording). It does not affect the sound.
+    pub fn set_mic_meters(&mut self, on: bool) {
+        self.bytes[layout::MIC_METERS_ENABLED] = on as u8;
+    }
+
+    /// Read one field of [`layout::NAMED`]: integers as stored, `*_level` fields
+    /// as their f32 value.
+    pub fn named(&self, name: &str) -> Option<f64> {
+        let &(_, off, width) = layout::NAMED.iter().find(|f| f.0 == name)?;
+        Some(if name.ends_with("_level") {
+            self.f32_at(off) as f64
+        } else {
+            let mut b = [0u8; 4];
+            b[..width].copy_from_slice(&self.bytes[off..off + width]);
+            u32::from_le_bytes(b) as f64
+        })
+    }
+
+    /// Write one field of [`layout::NAMED`] (for experiments; see `examples/miclab.rs`).
+    pub fn set_named(&mut self, name: &str, value: f64) -> Result<(), String> {
+        let &(_, off, width) =
+            layout::NAMED.iter().find(|f| f.0 == name).ok_or_else(|| format!("unknown field {name}"))?;
+        if name.ends_with("_level") {
+            self.set_f32(off, (value as f32).clamp(0.0, 1.0));
+        } else {
+            let v = value as u32;
+            if width == 1 && v > 0xFF {
+                return Err(format!("{name} is one byte"));
+            }
+            self.bytes[off..off + width].copy_from_slice(&v.to_le_bytes()[..width]);
         }
+        Ok(())
     }
 
     /// The integer fields of [`layout::NAMED`] (flags and presets), as stored.
@@ -435,6 +482,23 @@ mod tests {
         assert_eq!(get("reverb_enabled"), Some(0xFF));
         assert_eq!(get("mic_speech_compressor_preset"), Some(2));
         assert_eq!(get("noise_gate_level"), None);
+    }
+
+    #[test]
+    fn gate_and_mic_eq_switch_their_enable_flags() {
+        let mut s = Settings::from_bytes([0u8; layout::LEN]);
+        s.set_noise_gate(0.35);
+        assert!(s.noise_gate_enabled());
+        s.set_noise_gate(0.0);
+        assert!(!s.noise_gate_enabled());
+        let mut g = [0.0; layout::BANDS];
+        s.set_mic_eq(&g);
+        assert!(!s.mic_eq_enabled());
+        g[3] = -2.0;
+        s.set_mic_eq(&g);
+        assert!(s.mic_eq_enabled());
+        s.set_mic_meters(true);
+        assert!(s.mic_meters() && s.mic_eq_enabled() && !s.noise_gate_enabled());
     }
 
     #[test]

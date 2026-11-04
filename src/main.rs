@@ -254,15 +254,23 @@ fn print_status(dev: DeviceId, s: &Settings, raw: bool) {
         fmt_bands(&s.speaker_eq()),
         if s.speaker_eq_enabled() { "" } else { "  (disabled)" }
     );
-    println!("mic EQ       [{}] dB", fmt_bands(&s.mic_eq()));
+    println!(
+        "mic EQ       [{}] dB{}",
+        fmt_bands(&s.mic_eq()),
+        if s.mic_eq_enabled() { "" } else { "  (disabled)" }
+    );
     println!("surround 3D  {}", if s.surround() { "on" } else { "off" });
     println!(
         "reverb       {:.1}%{}",
         pct(s.reverb()),
         if s.reverb_enabled() { "" } else { "  (disabled)" }
     );
-    println!("noise gate   {:.1}%", pct(s.noise_gate()));
-    println!("mic monitors {:?}", s.mic_monitors());
+    println!(
+        "noise gate   {:.1}%{}",
+        pct(s.noise_gate()),
+        if s.noise_gate_enabled() { "" } else { "  (disabled)" }
+    );
+    println!("mic meters   {}", if s.mic_meters() { "on" } else { "off" });
     if raw {
         for (name, v) in s.named_ints() {
             println!("  {name:<30} {v}");
