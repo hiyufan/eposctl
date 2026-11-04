@@ -48,7 +48,10 @@ Plans, not promises. Items that need reverse engineering are marked **RE**.
       and AutoEQ / Equalizer APO import
 - [ ] Filter shape of the bands (`EAPO.dll` passes 1.5 and 0.95 to its EQ; probably Q and
       a level factor), to fit imported curves exactly instead of sampling them
-- [ ] Remaining APO fields (`hrtf_preset`, `0xB4`, the mic processing flags)
+- [x] Offsets of the remaining APO fields (`hrtf_preset`, noise reduction, HPF, speech
+      compressor; from the settings serialiser in `EAPO.dll`)
+- [ ] Test what they do on the H3PRO, starting with `noise_gate_enabled` (`0x44`): the
+      gate may only act while the mic page is open
 
 ## Later
 

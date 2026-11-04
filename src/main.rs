@@ -263,6 +263,11 @@ fn print_status(dev: DeviceId, s: &Settings, raw: bool) {
     );
     println!("noise gate   {:.1}%", pct(s.noise_gate()));
     println!("mic monitors {:?}", s.mic_monitors());
+    if raw {
+        for (name, v) in s.named_ints() {
+            println!("  {name:<30} {v}");
+        }
+    }
     println!(
         "meters dB    [{}]",
         s.meters().iter().map(|m| format!("{m:.0}")).collect::<Vec<_>>().join(" ")

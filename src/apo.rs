@@ -42,15 +42,37 @@ const LOCK_TIMEOUT_MS: u32 = 2000;
 pub mod layout {
     /// u32, value 2 on every capture (observed, meaning unknown — likely a version).
     pub const HEADER: usize = 0x00;
-    /// u8 bool, virtual 3D surround (observed).
+    /// u8 bool, virtual 3D surround (observed). `EAPO.dll` names it `direct_sound_enabled`.
     pub const SURROUND_ENABLED: usize = 0x40;
-    /// u8 bool, speaker EQ enabled (inferred: always 1).
+    /// u8 bool, `speaker_eq_enabled` (name from `EAPO.dll`; always 1).
     pub const SPEAKER_EQ_ENABLED: usize = 0x41;
-    /// u8 bools set while the official UI shows the microphone page (inferred:
-    /// mic meters / voice activity / voice peak monitors).
+    /// u8 bools set while the official UI shows the microphone page (observed).
+    /// `EAPO.dll` names them `mic_eq_enabled`, `noise_gate_enabled` and
+    /// `mic_meters_enabled`.
     pub const MIC_MONITOR_FLAGS: [usize; 3] = [0x42, 0x44, 0x46];
-    /// u8 bool, toggled together with surround by the official UI (inferred: reverb enabled).
+    /// u8 bool, `reverb_enabled` (name from `EAPO.dll`); the official UI toggles it
+    /// together with surround (observed).
     pub const REVERB_ENABLED: usize = 0x45;
+    /// Fields named by the settings (de)serialiser in `EAPO.dll`
+    /// (`0x1802e6650` / `0x1802e6c20`), with their width in bytes. Their effect on
+    /// the H3PRO is not verified.
+    pub const NAMED: [(&str, usize, usize); 15] = [
+        ("direct_sound_enabled", 0x40, 1),
+        ("speaker_eq_enabled", 0x41, 1),
+        ("mic_eq_enabled", 0x42, 1),
+        ("mic_nr_enabled", 0x43, 1),
+        ("noise_gate_enabled", 0x44, 1),
+        ("reverb_enabled", 0x45, 1),
+        ("mic_meters_enabled", 0x46, 1),
+        ("mic_hpf_enabled", 0x47, 1),
+        ("mic_eq_preset", 0x9C, 4),
+        ("mic_nr_preset", 0xA0, 4),
+        ("hrtf_preset", 0xA8, 4),
+        ("mic_speech_compressor_enabled", 0xB1, 1),
+        ("mic_speech_compressor_preset", 0xB4, 4),
+        ("reverb_level", 0x94, 4),
+        ("noise_gate_level", 0x98, 4),
+    ];
     /// f32 x 9, speaker EQ gains in dB, -6..=6 (observed).
     pub const SPEAKER_EQ: usize = 0x4C;
     /// f32 x 9, microphone EQ gains in dB (observed for bands 1-8).
@@ -175,6 +197,19 @@ impl Settings {
         for (o, v) in layout::MIC_MONITOR_FLAGS.into_iter().zip(on) {
             self.bytes[o] = v as u8;
         }
+    }
+
+    /// The integer fields of [`layout::NAMED`] (flags and presets), as stored.
+    pub fn named_ints(&self) -> Vec<(&'static str, u32)> {
+        layout::NAMED
+            .iter()
+            .filter(|&&(name, _, _)| !name.ends_with("_level"))
+            .map(|&(name, off, width)| {
+                let mut b = [0u8; 4];
+                b[..width].copy_from_slice(&self.bytes[off..off + width]);
+                (name, u32::from_le_bytes(b))
+            })
+            .collect()
     }
 
     pub fn meters(&self) -> [f32; layout::METER_COUNT] {
@@ -379,5 +414,33 @@ impl ApoChannel {
 impl Drop for ApoChannel {
     fn drop(&mut self) {
         unsafe { UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: self.view.cast() }) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn named_ints_read_widths_and_skip_levels() {
+        let mut b = [0u8; layout::LEN];
+        b[0x44] = 1;
+        b[0x45] = 0xFF; // a one-byte flag must not pick up its neighbours
+        b[0xB4..0xB8].copy_from_slice(&2u32.to_le_bytes());
+        b[0x98..0x9C].copy_from_slice(&0.5f32.to_le_bytes());
+        let s = Settings::from_bytes(b);
+        let named = s.named_ints();
+        let get = |n: &str| named.iter().find(|(k, _)| *k == n).map(|&(_, v)| v);
+        assert_eq!(get("noise_gate_enabled"), Some(1));
+        assert_eq!(get("reverb_enabled"), Some(0xFF));
+        assert_eq!(get("mic_speech_compressor_preset"), Some(2));
+        assert_eq!(get("noise_gate_level"), None);
+    }
+
+    #[test]
+    fn named_fields_stay_below_the_meters() {
+        for (name, off, width) in layout::NAMED {
+            assert!(off + width <= layout::WRITABLE_END, "{name}");
+        }
     }
 }

@@ -40,20 +40,30 @@ Both processes run as `NT AUTHORITY\LocalService` (observed: service account of
 ## Settings block layout (`apo_settings::Data`)
 
 Offsets are from the start of the section. Floats are little-endian IEEE-754.
+"named" = the field's name and width come from the settings (de)serialiser in
+`EAPO.dll` (RVA `0x2E6650` reads each field from the registry by name into
+`[struct + offset]`, RVA `0x2E6C20` writes them back); its effect on the H3PRO
+has not been tested. `eposctl status --raw` prints them.
 
 | Offset | Type | Meaning | Status |
 |---|---|---|---|
 | `0x00` | u32 | `2` in every capture; probably a version | observed value, meaning unknown |
 | `0x04` | u32 | `4` in every capture | unknown |
-| `0x40` | u8 | virtual 3D surround enabled | observed |
-| `0x41` | u8 | `1` in every capture; probably speaker EQ enabled | inferred |
-| `0x42`, `0x44`, `0x46` | u8 | mic monitor enables: set while the official UI shows the microphone page. The APO only updates the meters at `0x440` while they are set | observed |
-| `0x45` | u8 | always flipped together with `0x40` by the official UI; probably reverb enabled | inferred |
+| `0x40` | u8 | virtual 3D surround enabled; `EAPO.dll` calls it `direct_sound_enabled` | observed |
+| `0x41` | u8 | `speaker_eq_enabled`; `1` in every capture | named |
+| `0x42`, `0x44`, `0x46` | u8 | `mic_eq_enabled`, `noise_gate_enabled`, `mic_meters_enabled`. The official UI sets all three while it shows the microphone page, and the APO only updates the meters at `0x440` while they are set (observed). Outside that page they were `0`, so whether the mic EQ and the gate act at other times is **open** | observed + named |
+| `0x43` | u8 | `mic_nr_enabled` | named |
+| `0x47` | u8 | `mic_hpf_enabled` | named |
+| `0x45` | u8 | `reverb_enabled`; always flipped together with `0x40` by the official UI | observed + named |
 | `0x4C` | f32[9] | speaker EQ gains in dB, -6..+6, lowest band first | observed |
 | `0x70` | f32[9] | microphone EQ gains in dB | observed (bands 1-8) |
 | `0x94` | f32 | reverb amount, 0..1 (official UI writes slider/255) | observed |
 | `0x98` | f32 | noise gate amount, 0..1 (official UI writes slider/255) | observed |
-| `0xB4` | u32 | `2` in every capture; candidate for `hrtf_preset` or `mic_nr_preset` | unknown |
+| `0x9C` | u32 | `mic_eq_preset` | named |
+| `0xA0` | u32 | `mic_nr_preset` | named |
+| `0xA8` | u32 | `hrtf_preset` | named |
+| `0xB1` | u8 | `mic_speech_compressor_enabled` | named |
+| `0xB4` | u32 | `mic_speech_compressor_preset`; `2` in every capture | named |
 | `0x440` | f32[15] | level meters in dB written by the APO; see below | observed |
 
 ### Level meters (`0x440`)
@@ -81,7 +91,7 @@ table (one for 48 kHz, one for other rates) and the constants `1.5` and `0.95`
 DLL, so these are taken as the band centres of both EQs (inferred). `1.5` is
 probably the bands' Q and `0.95` a level factor; not confirmed.
 
-Setting names found in both binaries (the order in the struct is not known):
+Setting names found in both binaries (offsets in the table above):
 `direct_sound_enabled`, `speaker_eq_enabled`, `speaker_eq_levels`,
 `reverb_enabled`, `reverb_level`, `noise_gate_enabled`, `noise_gate_level`,
 `hrtf_preset`, `mic_eq_enabled`, `mic_eq_levels`, `mic_eq_preset`,
@@ -274,5 +284,8 @@ on the device side and is not known.
 
 - Does the APO create the section itself when the EPOS service is not running?
   (`EAPO.dll` contains "Could not create shared memory", which suggests create-or-open.)
-- Meaning of `0x00`, `0x04`, `0x48`, `0xB4`, and the bytes between `0x9C` and `0x440`.
+- Meaning of `0x00`, `0x04`, `0x48`, `0xA4`, `0xAC`, `0xB0`, and the bytes between `0xB8` and `0x440`.
+- Whether the APO honours `mic_eq_enabled` / `noise_gate_enabled` (`0x42`, `0x44`): if it
+  does, the mic EQ and the gate only act while the mic page is open. Test: gate at
+  100 %, meters on, compare the mic level with `0x44` at 0 and at 1.
 - Whether the event must be signalled for the APO to pick up changes, or if it polls.
