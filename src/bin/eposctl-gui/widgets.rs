@@ -251,7 +251,7 @@ pub fn slider(ui: &mut Ui, value: &mut f32, enabled: bool) -> Response {
                 resp.mark_changed();
             }
             ui.memory_mut(|m| {
-                m.set_focus_lock_filter(resp.id, egui::EventFilter { horizontal_arrows: true, ..Default::default() })
+                m.set_focus_lock_filter(resp.id, egui::EventFilter { horizontal_arrows: true, ..Default::default() });
             });
         }
     }

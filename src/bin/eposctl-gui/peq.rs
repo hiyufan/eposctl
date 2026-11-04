@@ -39,83 +39,135 @@ impl Changed {
     }
 }
 
+/// Log-frequency by dB axes of the plot.
+struct Axes {
+    rect: Rect,
+    plot: Rect,
+}
+
+fn lf(f: f32) -> f32 {
+    f.max(1.0).log10()
+}
+
+impl Axes {
+    fn new(rect: Rect) -> Self {
+        Self { rect, plot: Rect::from_min_max(rect.min + vec2(40.0, 10.0), rect.max - vec2(12.0, 26.0)) }
+    }
+
+    fn x_of(&self, f: f32) -> f32 {
+        egui::remap(lf(f), lf(F_MIN)..=lf(F_MAX), self.plot.left()..=self.plot.right())
+    }
+
+    fn f_of(&self, x: f32) -> f32 {
+        10f32.powf(egui::remap_clamp(x, self.plot.left()..=self.plot.right(), lf(F_MIN)..=lf(F_MAX)))
+    }
+
+    fn y_of(&self, db: f32) -> f32 {
+        egui::remap(db.clamp(-DB, DB), -DB..=DB, self.plot.bottom()..=self.plot.top())
+    }
+
+    fn db_of(&self, y: f32) -> f32 {
+        egui::remap_clamp(y, self.plot.bottom()..=self.plot.top(), -DB..=DB)
+    }
+
+    /// Where a band's point is drawn (bands without gain sit on 0 dB).
+    fn pos_of(&self, b: &Band) -> Pos2 {
+        pos2(self.x_of(b.freq), self.y_of(if b.kind.has_gain() { b.gain } else { 0.0 }))
+    }
+
+    /// The band whose point is within reach of `p`.
+    fn nearest(&self, p: Pos2, peq: &Peq) -> Option<usize> {
+        peq.bands
+            .iter()
+            .enumerate()
+            .map(|(i, b)| (i, self.pos_of(b).distance(p)))
+            .filter(|(_, d)| *d < 14.0)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(i, _)| i)
+    }
+
+    /// The response `db(f)` sampled every few pixels across the plot.
+    fn trace(&self, db: &dyn Fn(f64) -> f64) -> Vec<Pos2> {
+        let (plot, n) = (self.plot, (self.plot.width() / 3.0).max(40.0) as usize);
+        (0..=n)
+            .map(|k| {
+                let x = plot.left() + plot.width() * k as f32 / n as f32;
+                pos2(x, self.y_of(db(self.f_of(x) as f64) as f32))
+            })
+            .collect()
+    }
+}
+
 /// The curve plot with one draggable point per band. `fitted` is the 9-band
 /// fit of the curve and the level shift it was given, drawn as what the
 /// headset makes of it (`None` when the bands go to Equalizer APO instead).
 pub fn plot(ui: &mut Ui, peq: &mut Peq, fitted: Option<(&[f32; BANDS], f32)>, height: f32) -> Changed {
-    let mut out = Changed::default();
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click_and_drag());
+    let axes = Axes::new(rect);
     let painter = ui.painter_at(rect.expand(2.0));
-    let plot = Rect::from_min_max(rect.min + vec2(40.0, 10.0), rect.max - vec2(12.0, 26.0));
-    let lf = |f: f32| f.max(1.0).log10();
-    let x_of = |f: f32| egui::remap(lf(f), lf(F_MIN)..=lf(F_MAX), plot.left()..=plot.right());
-    let f_of = |x: f32| 10f32.powf(egui::remap_clamp(x, plot.left()..=plot.right(), lf(F_MIN)..=lf(F_MAX)));
-    let y_of = |db: f32| egui::remap(db.clamp(-DB, DB), -DB..=DB, plot.bottom()..=plot.top());
-    let db_of = |y: f32| egui::remap_clamp(y, plot.bottom()..=plot.top(), -DB..=DB);
-    let font = theme::font(11.0);
+    draw_grid(&painter, &axes);
+    draw_curves(&painter, &axes, peq, fitted);
 
-    // Grid: dB lines, and the headset's band centres.
+    // Points: drag to move (frequency, gain), scroll to change Q.
+    let pointer = resp.interact_pointer_pos().or(resp.hover_pos());
+    let (dragging, mut out) = drag(ui, &resp, &axes, pointer, peq);
+    let hovered = pointer.filter(|p| axes.plot.expand(14.0).contains(*p)).and_then(|p| axes.nearest(p, peq));
+    if let Some(i) = hovered.or(dragging) {
+        out.merge(scroll_q(ui, &resp, &mut peq.bands[i]));
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+    }
+    draw_points(&painter, &axes, peq, |i| Some(i) == hovered || Some(i) == dragging);
+    out
+}
+
+/// Grid: dB lines, and the headset's band centres.
+fn draw_grid(painter: &egui::Painter, axes: &Axes) {
+    let (plot, font) = (axes.plot, theme::font(11.0));
     for db in [-12.0, -6.0, 0.0, 6.0, 12.0] {
-        let y = y_of(db);
+        let y = axes.y_of(db);
         let c = if db == 0.0 { Color32::from_rgb(0x34, 0x37, 0x40) } else { Color32::from_rgb(0x22, 0x24, 0x2A) };
         painter.line_segment([pos2(plot.left(), y), pos2(plot.right(), y)], Stroke::new(1.0, c));
         painter.text(pos2(plot.left() - 8.0, y), Align2::RIGHT_CENTER, format!("{db:+.0}"), font.clone(), FAINT);
     }
+    let column = Stroke::new(1.0, Color32::from_rgb(0x22, 0x24, 0x2A));
     for (i, &c) in CENTRES_HZ.iter().enumerate() {
-        let x = x_of(c);
-        painter.line_segment(
-            [pos2(x, plot.top()), pos2(x, plot.bottom())],
-            Stroke::new(1.0, Color32::from_rgb(0x22, 0x24, 0x2A)),
-        );
-        painter.text(pos2(x, rect.bottom() - 4.0), Align2::CENTER_BOTTOM, band_label(i), font.clone(), SECONDARY);
+        let x = axes.x_of(c);
+        painter.line_segment([pos2(x, plot.top()), pos2(x, plot.bottom())], column);
+        let label_at = pos2(x, axes.rect.bottom() - 4.0);
+        painter.text(label_at, Align2::CENTER_BOTTOM, band_label(i), font.clone(), SECONDARY);
     }
+}
 
-    // Curves.
-    let n = (plot.width() / 3.0).max(40.0) as usize;
-    let pts = |f: &dyn Fn(f64) -> f64| -> Vec<Pos2> {
-        (0..=n)
-            .map(|k| {
-                let x = plot.left() + plot.width() * k as f32 / n as f32;
-                pos2(x, y_of(f(f_of(x) as f64) as f32))
-            })
-            .collect()
-    };
+/// The target curve (dashed) and, when fitted, what the headset makes of it.
+fn draw_curves(painter: &egui::Painter, axes: &Axes, peq: &Peq, fitted: Option<(&[f32; BANDS], f32)>) {
     if let Some((g, shift)) = fitted {
         // Undo the shift so the fit lines up with the target it was made from.
-        let heard = pts(&|f| epos_db(g, f) - shift as f64);
+        let heard = axes.trace(&|f| epos_db(g, f) - shift as f64);
         painter.line(heard, Stroke::new(2.5, ACCENT));
     }
-    let target = pts(&|f| peq.db_at(f));
+    let target = axes.trace(&|f| peq.db_at(f));
     let target_color = if fitted.is_some() { TEXT.gamma_multiply(0.55) } else { ACCENT };
     painter.add(egui::Shape::dashed_line(&target, Stroke::new(1.5, target_color), 5.0, 4.0));
+}
 
-    // Points: drag to move (frequency, gain), scroll to change Q.
+/// Dragging a point moves its band. Returns the band being dragged.
+fn drag(ui: &Ui, resp: &egui::Response, axes: &Axes, pointer: Option<Pos2>, peq: &mut Peq) -> (Option<usize>, Changed) {
     let id = ui.scope_id().with("peq_drag");
-    let pointer = resp.interact_pointer_pos().or(resp.hover_pos());
-    let pos_of = |b: &Band| pos2(x_of(b.freq), if b.kind.has_gain() { y_of(b.gain) } else { y_of(0.0) });
-    let nearest = |p: Pos2, peq: &Peq| {
-        peq.bands
-            .iter()
-            .enumerate()
-            .map(|(i, b)| (i, pos_of(b).distance(p)))
-            .filter(|(_, d)| *d < 14.0)
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(i, _)| i)
-    };
+    let mut out = Changed::default();
     let mut dragging: Option<usize> = ui.data(|d| d.get_temp(id));
     if resp.drag_started()
         && let Some(p) = pointer
     {
-        dragging = nearest(p, peq);
+        dragging = axes.nearest(p, peq);
         ui.data_mut(|d| d.insert_temp(id, dragging));
     }
     if resp.dragged()
         && let (Some(i), Some(p)) = (dragging, pointer)
         && let Some(b) = peq.bands.get_mut(i)
     {
-        b.freq = (f_of(p.x) * 10.0).round() / 10.0;
+        b.freq = (axes.f_of(p.x) * 10.0).round() / 10.0;
         if b.kind.has_gain() {
-            b.gain = (db_of(p.y) * 10.0).round() / 10.0;
+            b.gain = (axes.db_of(p.y) * 10.0).round() / 10.0;
         }
         out.curve = true;
     }
@@ -124,25 +176,27 @@ pub fn plot(ui: &mut Ui, peq: &mut Peq, fitted: Option<(&[f32; BANDS], f32)>, he
         out.settled = dragging.is_some();
         dragging = None;
     }
-    let hovered = pointer.filter(|p| plot.expand(14.0).contains(*p)).and_then(|p| nearest(p, peq));
-    if let Some(i) = hovered.or(dragging) {
-        let scroll = ui.input(|inp| inp.smooth_scroll_delta.y);
-        if scroll != 0.0 && resp.hovered() {
-            let b = &mut peq.bands[i];
-            b.q = (b.q * (1.0 + scroll * 0.004)).clamp(0.1, 20.0);
-            out.curve = true;
-            out.settled = true;
-        }
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+    (dragging, out)
+}
+
+/// Scrolling over a point changes its band's Q.
+fn scroll_q(ui: &Ui, resp: &egui::Response, band: &mut Band) -> Changed {
+    let scroll = ui.input(|inp| inp.smooth_scroll_delta.y);
+    if scroll == 0.0 || !resp.hovered() {
+        return Changed::default();
     }
+    band.q = (band.q * (1.0 + scroll * 0.004)).clamp(0.1, 20.0);
+    Changed::DONE
+}
+
+fn draw_points(painter: &egui::Painter, axes: &Axes, peq: &Peq, active: impl Fn(usize) -> bool) {
+    let font = theme::font(11.0);
     for (i, b) in peq.bands.iter().enumerate() {
-        let p = pos_of(b);
-        let active = Some(i) == hovered || Some(i) == dragging;
+        let p = axes.pos_of(b);
         let fill = if b.on { ACCENT } else { FAINT };
-        painter.circle_filled(p, if active { 7.0 } else { 5.5 }, fill);
+        painter.circle_filled(p, if active(i) { 7.0 } else { 5.5 }, fill);
         painter.text(p + vec2(0.0, -12.0), Align2::CENTER_BOTTOM, format!("{}", i + 1), font.clone(), SECONDARY);
     }
-    out
 }
 
 fn kind_label(s: &Strings, k: Kind) -> &'static str {

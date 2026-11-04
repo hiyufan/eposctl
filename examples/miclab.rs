@@ -108,33 +108,36 @@ fn analyse(x: &[f32], rate: u32) -> Stats {
     s
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut args = std::env::args().skip(1).peekable();
-    let (mut secs, mut rounds, mut mic, mut set_only) = (4.0, 1usize, "EPOS".to_string(), false);
-    let mut conds: Vec<(String, Cond)> = Vec::new();
+type Error = Box<dyn std::error::Error>;
+
+struct Opts {
+    secs: f64,
+    rounds: usize,
+    mic: String,
+    set_only: bool,
+    conds: Vec<(String, Cond)>,
+}
+
+fn parse_args() -> Result<Opts, Error> {
+    let mut args = std::env::args().skip(1);
+    let mut o = Opts { secs: 4.0, rounds: 1, mic: "EPOS".into(), set_only: false, conds: Vec::new() };
     while let Some(a) = args.next() {
         match a.as_str() {
-            "--secs" => secs = args.next().ok_or("--secs N")?.parse()?,
-            "--rounds" => rounds = args.next().ok_or("--rounds N")?.parse()?,
-            "--mic" => mic = args.next().ok_or("--mic NAME")?,
-            "--set" => set_only = true,
-            _ => conds.push((a.clone(), parse_cond(&a)?)),
+            "--secs" => o.secs = args.next().ok_or("--secs N")?.parse()?,
+            "--rounds" => o.rounds = args.next().ok_or("--rounds N")?.parse()?,
+            "--mic" => o.mic = args.next().ok_or("--mic NAME")?,
+            "--set" => o.set_only = true,
+            _ => o.conds.push((a.clone(), parse_cond(&a)?)),
         }
     }
-    if conds.is_empty() {
+    if o.conds.is_empty() {
         return Err("give at least one condition, e.g. noise_gate_enabled=1".into());
     }
-    let ch = ApoChannel::open(None)?;
-    if set_only {
-        for (_, c) in &conds {
-            apply(&ch, c)?;
-        }
-        println!("written");
-        return Ok(());
-    }
+    Ok(o)
+}
 
-    // Original values of every field we touch, restored at the end.
-    let before = ch.read()?;
+/// Original values of every field the conditions touch, to restore at the end.
+fn originals(before: &Settings, conds: &[(String, Cond)]) -> Result<Cond, Error> {
     let mut fields: Vec<String> = conds.iter().flat_map(|(_, c)| c.iter().map(|(k, _)| k.clone())).collect();
     fields.sort();
     fields.dedup();
@@ -142,70 +145,75 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if fields.iter().any(|k| k == "mic_eq") && mic_eq.iter().any(|&g| g != mic_eq[0]) {
         return Err("mic_eq needs all original mic EQ bands equal, so they can be restored".into());
     }
-    let original: Cond = fields
+    let original = fields
         .iter()
         .map(|k| {
             let v = if k == "mic_eq" { Some(mic_eq[0] as f64) } else { before.named(k) };
             Ok((k.clone(), v.ok_or(format!("unknown field {k}"))?))
         })
         .collect::<Result<_, String>>()?;
-    let restore = original.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(",");
-    eprintln!("original: {restore}");
-    eprintln!("if interrupted, restore with: cargo run --example miclab -- --set {restore}");
+    Ok(original)
+}
 
-    let ep = eposctl::audio::find(eposctl::audio::Flow::Input, &mic)?;
-    eprintln!("recording from {}", ep.name);
+/// Totals over the rounds of one condition, and its 20 ms block levels (dBFS)
+/// for gate measurements.
+#[derive(Default, Clone)]
+struct Measured {
+    acc: Stats,
+    blocks: Vec<f64>,
+}
 
-    let mut acc = vec![Stats::default(); conds.len()];
-    // 20 ms block levels (dBFS) per condition, for gate measurements.
-    let mut blocks: Vec<Vec<f64>> = vec![Vec::new(); conds.len()];
-    let result = (|| -> Result<(), Box<dyn std::error::Error>> {
-        for r in 0..rounds {
-            for (i, (label, c)) in conds.iter().enumerate() {
-                // Every condition starts from the original values.
-                apply(&ch, &original)?;
-                apply(&ch, c)?;
-                std::thread::sleep(Duration::from_millis(400));
-                let (x, rate) = record(&ep.id, secs)?;
-                let s = analyse(&x, rate);
-                let n = (rate / 50) as usize;
-                blocks[i].extend(
-                    x.chunks_exact(n)
-                        .map(|b| db((b.iter().map(|&v| (v as f64) * (v as f64)).sum::<f64>() / n as f64).sqrt())),
-                );
-                eprintln!(
-                    "round {} {label:<40} rms {:6.1}  low {:6.1}  high {:6.1}  peak {:6.1} dBFS  zero {:4.0}%",
-                    r + 1,
-                    db(s.rms),
-                    db(s.low),
-                    db(s.high),
-                    db(s.peak),
-                    s.zero * 100.0
-                );
-                let a = &mut acc[i];
-                a.rms += s.rms * s.rms;
-                a.low += s.low * s.low;
-                a.high += s.high * s.high;
-                a.peak = a.peak.max(s.peak);
-                a.zero += s.zero;
-                a.n += 1;
-            }
+impl Measured {
+    fn add(&mut self, x: &[f32], rate: u32, s: &Stats) {
+        let n = (rate / 50) as usize;
+        let block_db = |b: &[f32]| db((b.iter().map(|&v| (v as f64) * (v as f64)).sum::<f64>() / n as f64).sqrt());
+        self.blocks.extend(x.chunks_exact(n).map(block_db));
+        let a = &mut self.acc;
+        a.rms += s.rms * s.rms;
+        a.low += s.low * s.low;
+        a.high += s.high * s.high;
+        a.peak = a.peak.max(s.peak);
+        a.zero += s.zero;
+        a.n += 1;
+    }
+}
+
+/// Every round of every condition, each starting from the original values.
+fn measure(ch: &ApoChannel, o: &Opts, original: &Cond, mic_id: &str) -> Result<Vec<Measured>, Error> {
+    let mut out = vec![Measured::default(); o.conds.len()];
+    for r in 0..o.rounds {
+        for ((label, c), m) in o.conds.iter().zip(&mut out) {
+            apply(ch, original)?;
+            apply(ch, c)?;
+            std::thread::sleep(Duration::from_millis(400));
+            let (x, rate) = record(mic_id, o.secs)?;
+            let s = analyse(&x, rate);
+            m.add(&x, rate, &s);
+            eprintln!(
+                "round {} {label:<40} rms {:6.1}  low {:6.1}  high {:6.1}  peak {:6.1} dBFS  zero {:4.0}%",
+                r + 1,
+                db(s.rms),
+                db(s.low),
+                db(s.high),
+                db(s.peak),
+                s.zero * 100.0
+            );
         }
-        Ok(())
-    })();
-    apply(&ch, &original)?;
-    eprintln!("restored: {restore}");
-    result?;
+    }
+    Ok(out)
+}
 
+fn print_table(conds: &[(String, Cond)], results: &mut [Measured]) {
     println!(
         "\n{:<40} {:>7} {:>7} {:>7} {:>7} {:>6} {:>6} {:>6} {:>6} {:>6}",
         "condition", "rms", "low", "high", "peak", "zero", "open", "p10", "p50", "p90"
     );
-    for (((label, _), a), b) in conds.iter().zip(&acc).zip(&mut blocks) {
+    for ((label, _), m) in conds.iter().zip(results) {
+        let (a, b) = (&m.acc, &mut m.blocks);
         let n = a.n.max(1) as f64;
         // "open": share of 20 ms blocks above -90 dBFS (i.e. not gated to silence).
         let open = b.iter().filter(|&&l| l > -90.0).count() as f64 / b.len().max(1) as f64;
-        b.sort_by(|x, y| x.total_cmp(y));
+        b.sort_by(f64::total_cmp);
         let q = |p: f64| b.get(((b.len() as f64 - 1.0) * p).round() as usize).copied().unwrap_or(f64::NAN);
         println!(
             "{label:<40} {:7.1} {:7.1} {:7.1} {:7.1} {:5.0}% {:5.0}% {:6.1} {:6.1} {:6.1}",
@@ -220,5 +228,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             q(0.9)
         );
     }
+}
+
+fn main() -> Result<(), Error> {
+    let o = parse_args()?;
+    let ch = ApoChannel::open(None)?;
+    if o.set_only {
+        for (_, c) in &o.conds {
+            apply(&ch, c)?;
+        }
+        println!("written");
+        return Ok(());
+    }
+    let original = originals(&ch.read()?, &o.conds)?;
+    let restore = original.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(",");
+    eprintln!("original: {restore}");
+    eprintln!("if interrupted, restore with: cargo run --example miclab -- --set {restore}");
+
+    let ep = eposctl::audio::find(eposctl::audio::Flow::Input, &o.mic)?;
+    eprintln!("recording from {}", ep.name);
+    let result = measure(&ch, &o, &original, &ep.id);
+    apply(&ch, &original)?;
+    eprintln!("restored: {restore}");
+    print_table(&o.conds, &mut result?);
     Ok(())
 }

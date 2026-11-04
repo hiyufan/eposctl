@@ -77,7 +77,7 @@ impl App {
             self.view.recording = None;
         }
         self.register_hotkeys();
-        let fired = self.hotkeys.as_ref().map(|h| h.take_fired()).unwrap_or_default();
+        let fired = self.hotkeys.as_ref().map(super::super::hotkeys::Hotkeys::take_fired).unwrap_or_default();
         for a in fired {
             match a {
                 Action::NextPreset => self.step_preset(1),
@@ -140,7 +140,7 @@ impl App {
             self.warn_low_battery(&name, b);
         }
         let tip = self.tray_tooltip(name, linked, battery);
-        let surround = self.editor.settings().map(|s| s.surround());
+        let surround = self.editor.settings().map(eposctl::apo::Settings::surround);
         if let Some(t) = &mut self.tray {
             t.update(battery, linked, tip);
             t.set_surround(surround);

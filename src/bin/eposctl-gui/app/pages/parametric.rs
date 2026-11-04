@@ -105,7 +105,7 @@ impl App {
         }
         let (db, hz) = cfg.peq.worst_gap(fit);
         widgets::desc(ui, &s.peq_fit_note.replace("{db}", &format!("{db:.1}")).replace("{hz}", &format_hz(hz)));
-        let current = self.editor.settings().map(|x| x.speaker_eq()).unwrap_or_default();
+        let current = self.editor.settings().map(eposctl::apo::Settings::speaker_eq).unwrap_or_default();
         let applied = current.iter().zip(&fit.gains).all(|(a, b)| (a - b).abs() < 0.05);
         if !applied && !changed.curve {
             ui.add_space(4.0);

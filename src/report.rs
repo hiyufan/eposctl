@@ -54,46 +54,57 @@ pub struct Options {
 }
 
 /// Build the report. `prompt` receives progress lines meant for the user.
-pub fn build(opts: &Options, mut prompt: impl FnMut(&str)) -> String {
+pub fn build(opts: &Options, prompt: impl FnMut(&str)) -> String {
+    // Writing to a String cannot fail, so the `fmt::Result`s below are ignored.
     let mut r = String::new();
     let _ = writeln!(r, "eposctl {} device report", env!("CARGO_PKG_VERSION"));
     let _ = writeln!(r, "Windows {}", windows_version());
+    apo_channels(&mut r);
+    let devs: Vec<HidInfo> = hid::enumerate().into_iter().filter(|d| VENDOR_IDS.contains(&d.vid)).collect();
+    hid_interfaces(&mut r, &devs);
+    if opts.query {
+        queries(&mut r);
+    }
+    vendor_traffic(&mut r, opts, &devs, prompt);
+    r
+}
 
-    // APO channels.
+/// Every APO settings channel and the non-zero rows of its settings block.
+fn apo_channels(r: &mut String) {
     let _ = writeln!(r, "\n[APO settings channels]");
-    match apo::discover() {
-        Ok(found) if found.is_empty() => {
-            let _ = writeln!(r, "none");
-        }
-        Ok(found) => {
-            for (id, _) in found {
-                let _ = writeln!(r, "{id}");
-                match ApoChannel::open(Some(id)).and_then(|c| c.read()) {
-                    Ok(s) => {
-                        for (i, chunk) in s.raw().chunks(16).enumerate() {
-                            if chunk.iter().any(|&b| b != 0) {
-                                let _ = writeln!(r, "  {:04x}  {}", i * 16, hex(chunk));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        let _ = writeln!(r, "  (cannot read: {e})");
-                    }
-                }
-            }
-        }
+    let found = match apo::discover() {
+        Ok(found) => found,
         Err(e) => {
             let _ = writeln!(r, "error: {e}");
+            return;
+        }
+    };
+    if found.is_empty() {
+        let _ = writeln!(r, "none");
+    }
+    for (id, _) in found {
+        let _ = writeln!(r, "{id}");
+        match ApoChannel::open(Some(id)).and_then(|c| c.read()) {
+            Ok(s) => hex_rows(r, s.raw()),
+            Err(e) => {
+                let _ = writeln!(r, "  (cannot read: {e})");
+            }
         }
     }
+}
 
-    // HID interfaces.
+fn hex_rows(r: &mut String, bytes: &[u8]) {
+    for (i, chunk) in bytes.chunks(16).enumerate().filter(|(_, c)| c.iter().any(|&b| b != 0)) {
+        let _ = writeln!(r, "  {:04x}  {}", i * 16, hex(chunk));
+    }
+}
+
+fn hid_interfaces(r: &mut String, devs: &[HidInfo]) {
     let _ = writeln!(r, "\n[HID interfaces]");
-    let devs: Vec<HidInfo> = hid::enumerate().into_iter().filter(|d| VENDOR_IDS.contains(&d.vid)).collect();
     if devs.is_empty() {
         let _ = writeln!(r, "none");
     }
-    for d in &devs {
+    for d in devs {
         let _ = writeln!(
             r,
             "{:04x}:{:04x}  page {:04x} usage {:04x}  in {:3} out {:3}  {}",
@@ -106,60 +117,56 @@ pub fn build(opts: &Options, mut prompt: impl FnMut(&str)) -> String {
             d.product.as_deref().unwrap_or("-")
         );
     }
+}
 
-    // Optional read-only queries.
-    if opts.query {
-        let _ = writeln!(r, "\n[Queries]");
-        match crate::headset::Headset::open() {
-            Ok(h) => {
-                let show = |r: &mut String, label: &str, v: std::io::Result<String>| {
-                    let _ = match v {
-                        Ok(v) => writeln!(r, "{label:<9} {v}"),
-                        Err(e) => writeln!(r, "{label:<9} ({e})"),
-                    };
-                };
-                show(&mut r, "product", h.product_name());
-                show(&mut r, "firmware", h.firmware());
-                show(&mut r, "battery", h.battery().map(|b| format!("{b}%")));
-                show(&mut r, "sidetone", h.sidetone().map(|s| s.to_string()));
-            }
-            Err(e) => {
-                let _ = writeln!(r, "({e})");
-            }
+/// Read-only queries (no serial number).
+fn queries(r: &mut String) {
+    let _ = writeln!(r, "\n[Queries]");
+    let h = match crate::headset::Headset::open() {
+        Ok(h) => h,
+        Err(e) => {
+            let _ = writeln!(r, "({e})");
+            return;
         }
-    }
+    };
+    let mut show = |label: &str, v: std::io::Result<String>| {
+        let _ = match v {
+            Ok(v) => writeln!(r, "{label:<9} {v}"),
+            Err(e) => writeln!(r, "{label:<9} ({e})"),
+        };
+    };
+    show("product", h.product_name());
+    show("firmware", h.firmware());
+    show("battery", h.battery().map(|b| format!("{b}%")));
+    show("sidetone", h.sidetone().map(|s| s.to_string()));
+}
 
-    // Passive listening on vendor collections.
+/// A report read during listening: when, from which collection, the bytes.
+type Heard = (Duration, String, Vec<u8>);
+
+/// Passive listening on the vendor collections, one thread each.
+fn vendor_traffic(r: &mut String, opts: &Options, devs: &[HidInfo], mut prompt: impl FnMut(&str)) {
     let vendor: Vec<&HidInfo> = devs.iter().filter(|d| d.usage_page >= 0xFF00).collect();
     let _ = writeln!(r, "\n[Vendor HID traffic, {} s]", opts.listen.as_secs());
     if vendor.is_empty() {
         let _ = writeln!(r, "no vendor collections");
-        return r;
+        return;
     }
     prompt(&format!(
         "Listening for {} s. Meanwhile: switch the headset off and on, press its buttons (ANC, mute), turn the volume wheel.",
         opts.listen.as_secs()
     ));
-    let (tx, rx) = mpsc::channel::<(Duration, String, Vec<u8>)>();
+    let (tx, rx) = mpsc::channel::<Heard>();
     let start = Instant::now();
+    let end = start + opts.listen;
     let mut opened = 0;
     for d in vendor {
         let tag = format!("{:04x}:{:04x}/{:04x}", d.vid, d.pid, d.usage_page);
         match HidDevice::open_read(d) {
             Ok(dev) => {
                 opened += 1;
-                let (tx, end) = (tx.clone(), start + opts.listen);
-                std::thread::spawn(move || {
-                    while let Some(left) = end.checked_duration_since(Instant::now()) {
-                        match dev.read(left.as_millis().clamp(1, 200) as u32) {
-                            Ok(Some(rep)) => {
-                                let _ = tx.send((start.elapsed(), tag.clone(), rep));
-                            }
-                            Ok(None) => {}
-                            Err(_) => break,
-                        }
-                    }
-                });
+                let tx = tx.clone();
+                std::thread::spawn(move || listen(&dev, &tag, start, end, &tx));
             }
             Err(e) => {
                 let _ = writeln!(r, "{tag}: cannot open ({e})");
@@ -179,5 +186,14 @@ pub fn build(opts: &Options, mut prompt: impl FnMut(&str)) -> String {
     if count == 0 && opened > 0 {
         let _ = writeln!(r, "no reports received");
     }
-    r
+}
+
+/// Forward every report from `dev` until `end` or a read error.
+fn listen(dev: &HidDevice, tag: &str, start: Instant, end: Instant, tx: &mpsc::Sender<Heard>) {
+    while let Some(left) = end.checked_duration_since(Instant::now()) {
+        let Ok(read) = dev.read(left.as_millis().clamp(1, 200) as u32) else { break };
+        if let Some(rep) = read {
+            let _ = tx.send((start.elapsed(), tag.to_owned(), rep));
+        }
+    }
 }

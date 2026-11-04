@@ -77,50 +77,63 @@ pub fn paint(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
 /// with a headset glyph in the middle. Used for the tray and the window icon.
 pub fn bitmap(size: u32, battery: Option<u8>, connected: bool) -> Vec<u8> {
     let n = size as f32;
-    let c = n / 2.0;
-    let outer = n * 0.48;
-    let inner = n * 0.36;
-    let accent = if connected { [0x44, 0xEA, 0xD6] } else { [0x8E, 0x90, 0x99] };
-    let dim = [0x3A, 0x3D, 0x45];
-    let frac = battery.map(|b| b as f32 / 100.0).unwrap_or(1.0);
-    let mut px = vec![0u8; (size * size * 4) as usize];
-    // 4×4 supersampling for smooth edges at 16 px.
-    let ss = 4;
-    for y in 0..size {
-        for x in 0..size {
-            let mut acc = [0f32; 4];
-            for sy in 0..ss {
-                for sx in 0..ss {
-                    let fx = x as f32 + (sx as f32 + 0.5) / ss as f32 - c;
-                    let fy = y as f32 + (sy as f32 + 0.5) / ss as f32 - c;
-                    let d = (fx * fx + fy * fy).sqrt();
-                    let col = if d <= outer && d >= inner {
-                        // Angle clockwise from 12 o'clock, 0..1.
-                        let a = (fx.atan2(-fy) / TAU).rem_euclid(1.0);
-                        Some(if a <= frac { accent } else { dim })
-                    } else if glyph(fx / inner, fy / inner) {
-                        Some(accent)
-                    } else {
-                        None
-                    };
-                    if let Some(rgb) = col {
-                        acc[0] += rgb[0] as f32;
-                        acc[1] += rgb[1] as f32;
-                        acc[2] += rgb[2] as f32;
-                        acc[3] += 1.0;
-                    }
+    let ring = Ring {
+        centre: n / 2.0,
+        outer: n * 0.48,
+        inner: n * 0.36,
+        accent: if connected { [0x44, 0xEA, 0xD6] } else { [0x8E, 0x90, 0x99] },
+        dim: [0x3A, 0x3D, 0x45],
+        level: battery.map(|b| b as f32 / 100.0).unwrap_or(1.0),
+    };
+    (0..size).flat_map(|y| (0..size).map(move |x| (x, y))).flat_map(|(x, y)| ring.pixel(x, y)).collect()
+}
+
+/// The icon's shapes and colours at one size.
+struct Ring {
+    centre: f32,
+    outer: f32,
+    inner: f32,
+    accent: [u8; 3],
+    dim: [u8; 3],
+    /// Bright part of the ring, 0..=1 clockwise from 12 o'clock.
+    level: f32,
+}
+
+impl Ring {
+    /// 4×4 supersampling for smooth edges at 16 px.
+    const SS: u32 = 4;
+
+    /// RGBA of pixel (`x`, `y`): the average colour of the covered samples,
+    /// with their coverage as alpha.
+    fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
+        let offsets = (0..Self::SS).map(|k| (k as f32 + 0.5) / Self::SS as f32);
+        let samples = offsets.clone().flat_map(|oy| offsets.clone().map(move |ox| (ox, oy)));
+        let mut acc = [0f32; 4];
+        for (ox, oy) in samples {
+            if let Some(rgb) = self.sample(x as f32 + ox - self.centre, y as f32 + oy - self.centre) {
+                for (a, c) in acc.iter_mut().zip(rgb) {
+                    *a += c as f32;
                 }
-            }
-            let i = ((y * size + x) * 4) as usize;
-            if acc[3] > 0.0 {
-                px[i] = (acc[0] / acc[3]) as u8;
-                px[i + 1] = (acc[1] / acc[3]) as u8;
-                px[i + 2] = (acc[2] / acc[3]) as u8;
-                px[i + 3] = (acc[3] / (ss * ss) as f32 * 255.0) as u8;
+                acc[3] += 1.0;
             }
         }
+        if acc[3] == 0.0 {
+            return [0; 4];
+        }
+        let coverage = acc[3] / (Self::SS * Self::SS) as f32;
+        [(acc[0] / acc[3]) as u8, (acc[1] / acc[3]) as u8, (acc[2] / acc[3]) as u8, (coverage * 255.0) as u8]
     }
-    px
+
+    /// Colour at offset (`fx`, `fy`) from the centre; `None` is transparent.
+    fn sample(&self, fx: f32, fy: f32) -> Option<[u8; 3]> {
+        let d = (fx * fx + fy * fy).sqrt();
+        if (self.inner..=self.outer).contains(&d) {
+            // Angle clockwise from 12 o'clock, 0..1.
+            let a = (fx.atan2(-fy) / TAU).rem_euclid(1.0);
+            return Some(if a <= self.level { self.accent } else { self.dim });
+        }
+        glyph(fx / self.inner, fy / self.inner).then_some(self.accent)
+    }
 }
 
 /// Headset silhouette in unit coordinates (inner ring radius = 1).

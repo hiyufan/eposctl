@@ -42,6 +42,17 @@ pub(super) fn preset_combo(
     *value != before
 }
 
+/// One "+ name" button per program; the one clicked.
+fn pick_program(ui: &mut Ui, programs: &[String]) -> Option<String> {
+    let mut picked = None;
+    for e in programs {
+        if widgets::ghost(ui, &format!("+  {e}")).clicked() {
+            picked = Some(e.clone());
+        }
+    }
+    picked
+}
+
 impl App {
     pub(super) fn per_app_panel(&mut self, ui: &mut Ui) {
         let s = self.s();
@@ -104,18 +115,12 @@ impl App {
     /// Recently used programs to pick from, and a field for any other.
     fn add_rule(&mut self, ui: &mut Ui) -> Option<String> {
         let s = self.s();
-        let mut add = None;
         let recent = self.auto.recent_without_rule(&self.cfg.auto);
+        let mut add = None;
         if !recent.is_empty() {
             widgets::desc(ui, s.auto_recent);
             ui.add_space(6.0);
-            ui.horizontal_wrapped(|ui| {
-                for e in &recent {
-                    if widgets::ghost(ui, &format!("+  {e}")).clicked() {
-                        add = Some(e.clone());
-                    }
-                }
-            });
+            add = ui.horizontal_wrapped(|ui| pick_program(ui, &recent)).inner;
             ui.add_space(8.0);
         }
         exe_input(ui, &mut self.view.rule_input, s.auto_exe_hint, s.add).or(add)
