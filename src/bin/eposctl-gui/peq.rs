@@ -25,6 +25,20 @@ pub struct Changed {
     pub settled: bool,
 }
 
+impl Changed {
+    /// Both at once: an edit that is complete in one go (a file, a new band).
+    pub const DONE: Self = Self { curve: true, settled: true };
+
+    pub fn merge(&mut self, other: Self) {
+        self.curve |= other.curve;
+        self.settled |= other.settled;
+    }
+
+    pub fn any(&self) -> bool {
+        self.curve || self.settled
+    }
+}
+
 /// The curve plot with one draggable point per band. `fitted` is the 9-band
 /// fit of the curve and the level shift it was given, drawn as what the
 /// headset makes of it (`None` when the bands go to Equalizer APO instead).
@@ -209,13 +223,4 @@ pub fn table(ui: &mut Ui, s: &Strings, peq: &mut Peq) -> Changed {
         out.settled = true;
     }
     out
-}
-
-/// Largest difference between the 9-band setting and the target over the
-/// range the fit covers, as (dB, Hz).
-pub fn worst_gap(peq: &Peq, gains: &[f32; BANDS], shift: f32) -> (f64, f64) {
-    (0..=60)
-        .map(|k| 44.2 * (20000.0f64 / 44.2).powf(k as f64 / 60.0))
-        .map(|f| ((epos_db(gains, f) - shift as f64 - peq.db_at(f)).abs(), f))
-        .fold((0.0, 0.0), |a, b| if b.0 > a.0 { b } else { a })
 }

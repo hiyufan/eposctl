@@ -19,6 +19,29 @@ pub enum Event {
     On,
 }
 
+/// Turns headset link readings into power events.
+#[derive(Default)]
+pub struct Follower {
+    last: Option<bool>,
+}
+
+impl Follower {
+    /// Off: also on the first reading, so a headset that is already off at start
+    /// is handled. On: only after we saw it off, so starting eposctl never
+    /// overrides a device picked by hand.
+    pub fn observe(&mut self, linked: Option<bool>) -> Option<Event> {
+        let prev = std::mem::replace(&mut self.last, linked);
+        if prev == linked {
+            return None;
+        }
+        match (prev, linked) {
+            (_, Some(false)) => Some(Event::Off),
+            (Some(false), Some(true)) => Some(Event::On),
+            _ => None,
+        }
+    }
+}
+
 /// Act on a headset power change. For each direction with a chosen device:
 /// - off: if the default is an EPOS device, switch to the chosen one;
 /// - on: if the default is still the chosen one, switch back to the EPOS device.
@@ -91,5 +114,20 @@ impl Devices {
             self.refresh();
         }
         self.ctx.request_repaint_after(Self::STALE);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn follower_reports_power_changes() {
+        let mut f = Follower::default();
+        let seen: Vec<_> = [None, Some(true), Some(true), Some(false), Some(false), Some(true)]
+            .into_iter()
+            .map(|l| f.observe(l))
+            .collect();
+        assert_eq!(seen, [None, None, None, Some(Event::Off), None, Some(Event::On)]);
     }
 }

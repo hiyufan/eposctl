@@ -7,6 +7,7 @@
 
 use crate::apo::{Settings, layout::BANDS};
 
+#[derive(Debug)]
 pub struct Preset {
     pub name: &'static str,
     pub speaker_eq: [f32; BANDS],

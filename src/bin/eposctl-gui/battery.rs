@@ -69,6 +69,33 @@ impl Tracker {
     }
 }
 
+/// Low-battery warnings: once per threshold as the level drains, re-armed once
+/// it has recovered (charged).
+#[derive(Default)]
+pub struct LowAlarm {
+    /// Lowest threshold already warned about.
+    warned: Option<u8>,
+}
+
+impl LowAlarm {
+    const THRESHOLDS: [u8; 3] = [5, 10, 20];
+    const REARM_ABOVE: u8 = 25;
+
+    /// Feed a reading; true when it crosses a threshold not yet warned about.
+    pub fn check(&mut self, percent: u8) -> bool {
+        if percent > Self::REARM_ABOVE {
+            self.warned = None;
+            return false;
+        }
+        let Some(level) = Self::THRESHOLDS.into_iter().find(|&t| percent <= t) else { return false };
+        if self.warned.is_some_and(|w| level >= w) {
+            return false;
+        }
+        self.warned = Some(level);
+        true
+    }
+}
+
 /// Hours left at `rate` percent per hour.
 pub fn hours_left(percent: u8, rate: f32) -> Option<f32> {
     (rate > 0.05 && rate.is_finite()).then(|| percent as f32 / rate)
@@ -77,6 +104,13 @@ pub fn hours_left(percent: u8, rate: f32) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn low_alarm_warns_once_per_threshold() {
+        let mut a = LowAlarm::default();
+        let warned: Vec<u8> = [30, 20, 19, 12, 10, 9, 5, 4, 30, 20].into_iter().filter(|&p| a.check(p)).collect();
+        assert_eq!(warned, [20, 10, 5, 20]);
+    }
 
     /// Feed one reading per minute; returns the last rate computed.
     fn run(t: &mut Tracker, start: Instant, minute0: u64, levels: &[u8]) -> Option<f32> {
