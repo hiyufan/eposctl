@@ -1,8 +1,10 @@
 //! Persistent settings (`%APPDATA%\eposctl\config.json`) and the autostart entry.
 
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
-use eposctl::apo::layout::BANDS;
+use eposctl::apo::{Settings, layout::BANDS};
+use eposctl::presets::Preset;
 use serde::{Deserialize, Serialize};
 
 use crate::strings::Lang;
@@ -13,6 +15,59 @@ pub struct Sound {
     pub speaker_eq: [f32; BANDS],
     pub reverb: f32,
     pub surround: bool,
+}
+
+impl Sound {
+    pub fn of(s: &Settings) -> Self {
+        Self { speaker_eq: s.speaker_eq(), reverb: s.reverb(), surround: s.surround() }
+    }
+
+    pub fn of_preset(p: &Preset) -> Self {
+        Self { speaker_eq: p.speaker_eq, reverb: p.reverb, surround: p.surround }
+    }
+
+    pub fn write_to(&self, s: &mut Settings) {
+        s.set_speaker_eq(&self.speaker_eq);
+        s.set_surround(self.surround);
+        s.set_reverb(self.reverb);
+    }
+
+    /// Sounds the same: equal EQ within rounding, and the same reverb where it
+    /// is audible (it only acts with surround on).
+    pub fn matches(&self, other: &Sound) -> bool {
+        let close = self.speaker_eq.iter().zip(&other.speaker_eq).all(|(x, y)| (x - y).abs() < 0.05);
+        close && self.surround == other.surround && (!self.surround || (self.reverb - other.reverb).abs() < 0.01)
+    }
+}
+
+/// Every setting the GUI edits: what an undo step restores.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Snapshot {
+    pub speaker_eq: [f32; BANDS],
+    pub mic_eq: [f32; BANDS],
+    pub reverb: f32,
+    pub noise_gate: f32,
+    pub surround: bool,
+}
+
+impl Snapshot {
+    pub fn of(s: &Settings) -> Self {
+        Self {
+            speaker_eq: s.speaker_eq(),
+            mic_eq: s.mic_eq(),
+            reverb: s.reverb(),
+            noise_gate: s.noise_gate(),
+            surround: s.surround(),
+        }
+    }
+
+    pub fn write_to(&self, s: &mut Settings) {
+        s.set_speaker_eq(&self.speaker_eq);
+        s.set_mic_eq(&self.mic_eq);
+        s.set_reverb(self.reverb);
+        s.set_noise_gate(self.noise_gate);
+        s.set_surround(self.surround);
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -92,6 +147,38 @@ pub struct Last {
     pub reverb: Option<f32>,
     pub noise_gate: Option<f32>,
     pub surround: Option<bool>,
+}
+
+impl Last {
+    pub fn of(s: &Settings) -> Self {
+        let v = Snapshot::of(s);
+        Self {
+            speaker_eq: Some(v.speaker_eq),
+            mic_eq: Some(v.mic_eq),
+            reverb: Some(v.reverb),
+            noise_gate: Some(v.noise_gate),
+            surround: Some(v.surround),
+        }
+    }
+
+    /// Put back every value that was saved.
+    pub fn write_to(&self, s: &mut Settings) {
+        if let Some(v) = self.speaker_eq {
+            s.set_speaker_eq(&v);
+        }
+        if let Some(v) = self.mic_eq {
+            s.set_mic_eq(&v);
+        }
+        if let Some(v) = self.reverb {
+            s.set_reverb(v);
+        }
+        if let Some(v) = self.noise_gate {
+            s.set_noise_gate(v);
+        }
+        if let Some(v) = self.surround {
+            s.set_surround(v);
+        }
+    }
 }
 
 /// A program and the preset to use while it is in the foreground.
@@ -270,66 +357,26 @@ impl Config {
     }
 }
 
-pub mod autostart {
-    use windows_sys::Win32::System::Registry::{
-        HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW,
-    };
+/// Saves the config a moment after the last change, so a slider drag is one write.
+#[derive(Default)]
+pub struct Autosave {
+    changed_at: Option<Instant>,
+}
 
-    const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-    const VALUE: &str = "eposctl";
+impl Autosave {
+    const DELAY: Duration = Duration::from_millis(800);
 
-    fn wide(s: &str) -> Vec<u16> {
-        s.encode_utf16().chain(Some(0)).collect()
+    pub fn touch(&mut self) {
+        self.changed_at = Some(Instant::now());
     }
 
-    fn command() -> Option<String> {
-        let exe = std::env::current_exe().ok()?;
-        Some(format!("\"{}\" --minimized", exe.display()))
-    }
-
-    pub fn is_enabled() -> bool {
-        let (key, val) = (wide(RUN_KEY), wide(VALUE));
-        let mut buf = [0u16; 1024];
-        let mut size = (buf.len() * 2) as u32;
-        let rc = unsafe {
-            RegGetValueW(
-                HKEY_CURRENT_USER,
-                key.as_ptr(),
-                val.as_ptr(),
-                RRF_RT_REG_SZ,
-                std::ptr::null_mut(),
-                buf.as_mut_ptr().cast(),
-                &mut size,
-            )
-        };
-        if rc != 0 {
-            return false;
+    /// True once per batch of changes, when it is time to save.
+    pub fn due(&mut self) -> bool {
+        let due = self.changed_at.is_some_and(|t| t.elapsed() > Self::DELAY);
+        if due {
+            self.changed_at = None;
         }
-        let len = (size as usize / 2).saturating_sub(1);
-        let current = String::from_utf16_lossy(&buf[..len]);
-        // Only count it as ours if it points at this executable.
-        command().is_some_and(|c| c.eq_ignore_ascii_case(&current))
-    }
-
-    pub fn set(enabled: bool) -> std::io::Result<()> {
-        let (key, val) = (wide(RUN_KEY), wide(VALUE));
-        let rc = if enabled {
-            let cmd = wide(&command().ok_or_else(|| std::io::Error::other("cannot locate executable"))?);
-            unsafe {
-                RegSetKeyValueW(
-                    HKEY_CURRENT_USER,
-                    key.as_ptr(),
-                    val.as_ptr(),
-                    REG_SZ,
-                    cmd.as_ptr().cast(),
-                    (cmd.len() * 2) as u32,
-                )
-            }
-        } else {
-            let rc = unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), val.as_ptr()) };
-            if rc == 2 { 0 } else { rc } // ERROR_FILE_NOT_FOUND: already off
-        };
-        if rc == 0 { Ok(()) } else { Err(std::io::Error::from_raw_os_error(rc as i32)) }
+        due
     }
 }
 

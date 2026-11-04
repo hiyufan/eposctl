@@ -1,7 +1,8 @@
 //! Small custom widgets in the suite's style: pill chips, switches, sliders, panels.
 
 use eframe::egui::{
-    self, Color32, CornerRadius, Frame, Key, Margin, Rect, Response, Sense, Stroke, StrokeKind, Ui, pos2, vec2,
+    self, Align, Color32, CornerRadius, Frame, Key, Layout, Margin, Rect, Response, RichText, Sense, Stroke,
+    StrokeKind, Ui, pos2, vec2,
 };
 
 use crate::theme::{self, ACCENT, ACCENT_DIM, BG, DANGER, FAINT, HAIRLINE, PANEL, RAISED, SECONDARY, TEXT, WARN};
@@ -9,6 +10,100 @@ use crate::theme::{self, ACCENT, ACCENT_DIM, BG, DANGER, FAINT, HAIRLINE, PANEL,
 /// The surface used for grouped controls.
 pub fn panel() -> Frame {
     Frame::new().fill(PANEL).corner_radius(CornerRadius::same(theme::R_CARD)).inner_margin(Margin::same(20))
+}
+
+/// A `panel` spanning the available width.
+pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    panel()
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            add(ui)
+        })
+        .inner
+}
+
+/// `left` on the left; `right` laid out from the right edge, vertically centred.
+pub fn split_row<R>(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut Ui) -> R) -> R {
+    ui.horizontal(|ui| {
+        left(ui);
+        ui.with_layout(Layout::right_to_left(Align::Center), right).inner
+    })
+    .inner
+}
+
+/// A heading with actions on the right, at the top of a panel.
+pub fn heading_row<R>(ui: &mut Ui, title: &str, actions: impl FnOnce(&mut Ui) -> R) -> R {
+    split_row(ui, |ui| heading(ui, title), actions)
+}
+
+/// A settings line: a label with a control on the right.
+pub fn labeled_row<R>(ui: &mut Ui, label: &str, control: impl FnOnce(&mut Ui) -> R) -> R {
+    let left = |ui: &mut Ui| {
+        ui.set_min_height(36.0);
+        ui.label(RichText::new(label).color(TEXT));
+    };
+    split_row(ui, left, control)
+}
+
+/// Title and description with a switch on the right. True when toggled.
+pub fn setting_row(ui: &mut Ui, title: &str, desc_text: &str, on: &mut bool, strong: bool) -> bool {
+    let left = |ui: &mut Ui| {
+        ui.vertical(|ui| {
+            ui.set_max_width(ui.available_width() - 70.0);
+            if strong {
+                heading(ui, title);
+            } else {
+                ui.label(RichText::new(title).color(TEXT));
+            }
+            desc(ui, desc_text);
+        });
+    };
+    split_row(ui, left, |ui| switch(ui, on, true).changed())
+}
+
+/// A divider with space above and below.
+pub fn spaced_divider(ui: &mut Ui, above: f32, below: f32) {
+    ui.add_space(above);
+    divider(ui);
+    ui.add_space(below);
+}
+
+/// Single-line text field in the suite's style.
+pub fn text_field<'a>(text: &'a mut String, hint: &'a str, width: f32) -> egui::TextEdit<'a> {
+    egui::TextEdit::singleline(text).hint_text(hint).desired_width(width).margin(Margin::symmetric(10, 7))
+}
+
+/// A text field with an "add" button. Returns the text when it is submitted
+/// (button or Enter); the caller clears the field if it accepts it.
+pub fn submit_field(ui: &mut Ui, text: &mut String, hint: &str, button: &str) -> Option<String> {
+    ui.horizontal(|ui| {
+        let te = ui.add(text_field(text, hint, 240.0));
+        let enter = te.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+        (primary(ui, button).clicked() || enter).then(|| text.clone())
+    })
+    .inner
+}
+
+/// The result of an action, shown under the control that started it.
+#[derive(Clone, Debug)]
+pub struct Notice {
+    text: String,
+    ok: bool,
+}
+
+impl Notice {
+    pub fn ok(text: impl Into<String>) -> Self {
+        Self { text: text.into(), ok: true }
+    }
+
+    pub fn error(text: impl Into<String>) -> Self {
+        Self { text: text.into(), ok: false }
+    }
+
+    pub fn show(&self, ui: &mut Ui) {
+        let color = if self.ok { ACCENT } else { DANGER };
+        ui.label(RichText::new(&self.text).font(theme::font(12.5)).color(color));
+    }
 }
 
 /// Preset pill. `selected` = currently applied.
