@@ -1,0 +1,4 @@
+# Limits that keep functions readable; CI fails when code goes past them.
+too-many-lines-threshold = 80
+excessive-nesting-threshold = 5
+cognitive-complexity-threshold = 20
